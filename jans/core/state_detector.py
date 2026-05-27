@@ -19,9 +19,13 @@ def _is_pid_alive(pid: int) -> bool:
 
 
 def _find_jsonl(session_id: str, cwd: str) -> Path | None:
-    project_key = cwd.replace("/", "-").replace(".", "-")
-    path = CLAUDE_PROJECTS / project_key / f"{session_id}.jsonl"
-    return path if path.exists() else None
+    # Try both the stored cwd and the resolved (real) path to handle case differences
+    for c in {cwd, str(Path(cwd).resolve())}:
+        project_key = c.replace("/", "-").replace(".", "-")
+        path = CLAUDE_PROJECTS / project_key / f"{session_id}.jsonl"
+        if path.exists():
+            return path
+    return None
 
 
 def _last_message_type(jsonl: Path) -> str | None:
@@ -84,16 +88,25 @@ def load_active_claude_sessions() -> list[Session]:
     return sessions
 
 
+def _norm(path: str) -> str:
+    """Normalize path for case-insensitive comparison on macOS."""
+    try:
+        return str(Path(path).resolve()).lower()
+    except Exception:
+        return path.lower()
+
+
 def find_real_session_id(cwd: str) -> str | None:
     """Find the most recent active Claude session ID for a given cwd."""
     if not CLAUDE_SESSIONS.exists():
         return None
+    cwd_norm = _norm(cwd)
     best = None
     best_mtime = 0.0
     for f in CLAUDE_SESSIONS.glob("*.json"):
         try:
             data = json.loads(f.read_text())
-            if data.get("cwd") != cwd:
+            if _norm(data.get("cwd", "")) != cwd_norm:
                 continue
             pid = data.get("pid")
             if pid and not _is_pid_alive(pid):
