@@ -38,7 +38,7 @@ _KEY_MAP: dict[str, str] = {
     "ctrl+u":     "C-u",
     "ctrl+w":     "C-w",
     "ctrl+z":     "C-z",
-    # f1, f2, f3, f4 and ctrl+left/right are reserved for jans bindings
+    # f1-f6 are reserved for jans bindings
 }
 
 _TMUX_BASE = "jans"

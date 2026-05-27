@@ -150,43 +150,47 @@ class HelpScreen(ModalScreen):
     DEFAULT_CSS = """
     HelpScreen { align: center middle; }
     HelpScreen > Vertical {
-        width: 60;
+        width: 58;
         height: auto;
-        max-height: 80%;
-        background: $surface;
-        border: solid $accent;
+        background: #1e1e2e;
+        border: solid #cba6f7;
         padding: 1 2;
     }
-    HelpScreen .section { color: $accent; text-style: bold; margin-top: 1; }
-    HelpScreen .key { color: $warning; }
-    HelpScreen .desc { color: $text; }
     """
 
     BINDINGS = [Binding("escape", "dismiss", show=False),
                 Binding("f1", "dismiss", show=False)]
 
     def compose(self) -> ComposeResult:
+        from rich.table import Table
         from textual.containers import Vertical
+        from textual.widgets import Static
+
+        table = Table(box=None, padding=(0, 2, 0, 0), show_header=False)
+        table.add_column("key", style="yellow", no_wrap=True)
+        table.add_column("desc", style="white")
+
+        def section(title):
+            table.add_row(f"[bold cyan]{title}[/bold cyan]", "")
+
+        section("Navigation")
+        table.add_row("ctrl+h", "Go to orchestrator (home)")
+        table.add_row("click", "Open session in right panel")
+        table.add_row("F1", "Show / close this help")
+        section("Sessions")
+        table.add_row("F2", "New research session")
+        table.add_row("F3", "New task session")
+        table.add_row("F4", "Load existing directory")
+        section("Panel resize")
+        table.add_row("F5", "Narrow left panel")
+        table.add_row("F6", "Widen left panel")
+        section("App")
+        table.add_row("ctrl+q", "Save and quit")
+
         with Vertical():
-            yield Label("[bold]jans - keyboard shortcuts[/bold]\n")
-            yield Label("[accent]Navigation[/accent]", classes="section")
-            yield Label("  [warning]ctrl+h[/warning]       Go to orchestrator (home)")
-            yield Label("  [warning]click[/warning]        Open session in right panel")
-            yield Label("  [warning]F1[/warning]           Show this help")
-            yield Label("")
-            yield Label("[accent]Sessions[/accent]", classes="section")
-            yield Label("  [warning]F2[/warning]           New research session")
-            yield Label("  [warning]F3[/warning]           New task session")
-            yield Label("  [warning]F4[/warning]           Load existing directory")
-            yield Label("")
-            yield Label("[accent]Panel resize[/accent]", classes="section")
-            yield Label("  [warning]ctrl+←[/warning]       Narrow left panel")
-            yield Label("  [warning]ctrl+→[/warning]       Widen left panel")
-            yield Label("")
-            yield Label("[accent]App[/accent]", classes="section")
-            yield Label("  [warning]ctrl+q[/warning]       Save and quit")
-            yield Label("")
-            yield Label("[dim]Press Escape or F1 to close[/dim]")
+            yield Label("[bold]jans  shortcuts[/bold]\n")
+            yield Static(table)
+            yield Label("\n[dim]Escape or F1 to close[/dim]")
 
     def action_dismiss(self) -> None:
         self.dismiss()
@@ -277,8 +281,8 @@ class HelmApp(App):
         Binding("f2", "new_research", "F2 Research", show=True),
         Binding("f3", "new_task", "F3 Task", show=True),
         Binding("f4", "load_dir", "F4 Load", show=True),
-        Binding("ctrl+left", "panel_narrow", "Panel ←", show=False),
-        Binding("ctrl+right", "panel_widen", "Panel →", show=False),
+        Binding("f5", "panel_narrow", "F5 ←", show=False),
+        Binding("f6", "panel_widen", "F6 →", show=False),
         Binding("ctrl+q", "quit_app", "Quit", show=True),
     ]
 
@@ -286,6 +290,7 @@ class HelmApp(App):
         super().__init__()
         self._sessions: list[Session] = []
         self._active_terminal_id: str = ORCHESTRATOR_ID
+
 
     def compose(self) -> ComposeResult:
         yield SessionList(id="session-list")
@@ -347,7 +352,7 @@ class HelmApp(App):
         if processing:
             parts.append(f"[yellow]▶[/yellow] {processing} processing")
         summary = "  ".join(parts) if parts else "[dim]no active sessions[/dim]"
-        return f"  {summary}   [dim]F1 help  ctrl+h home  F2 research  F3 task  F4 load  ctrl+q quit[/dim]"
+        return f"  {summary}   [dim]F1 help  F2 research  F3 task  F4 load  F5/F6 resize  ctrl+q quit[/dim]"
 
     @on(SessionList.SessionClicked)
     def session_clicked(self, event: SessionList.SessionClicked) -> None:
