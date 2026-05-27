@@ -23,6 +23,7 @@ class _OrchestratorHeader(Widget, can_focus=False):
         height: 3;
         background: $accent-darken-2;
         border-bottom: solid #313244;
+        content-align: center middle;
     }
     _OrchestratorHeader:hover {
         background: $accent-darken-1;
@@ -31,10 +32,7 @@ class _OrchestratorHeader(Widget, can_focus=False):
 
     def render(self):
         from rich.text import Text
-        t = Text(justify="center")
-        t.append(" jans \n", style="bold white")
-        t.append(" ◈ jans Claude ", style="bold #cba6f7")
-        return t
+        return Text(" jans ", justify="center", style="bold white")
 
     def on_click(self, event: events.Click) -> None:
         self.post_message(SessionList.OrchestratorClicked())
