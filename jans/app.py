@@ -146,37 +146,39 @@ class LoadSessionScreen(ModalScreen):
         self.query_one("#load", Button).press()
 
 
-class ResizableDivider(Widget):
+class ResizableDivider(Widget, can_focus=False):
     DEFAULT_CSS = """
     ResizableDivider {
-        width: 1;
+        width: 3;
         height: 100%;
-        background: $accent-darken-2;
+        background: $surface;
+        align: center middle;
     }
     ResizableDivider:hover {
         background: $accent;
     }
+    ResizableDivider Label {
+        background: transparent;
+        color: $text-muted;
+        width: 3;
+        text-align: center;
+    }
+    ResizableDivider:hover Label {
+        color: $background;
+    }
     """
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self._dragging = False
+    def compose(self) -> ComposeResult:
+        yield Label("⋮")
 
-    def on_mouse_down(self, event: events.MouseDown) -> None:
-        self._dragging = True
-        self.capture_mouse()
+    def on_mouse_scroll_up(self, event: events.MouseScrollUp) -> None:
+        sl = self.app.query_one("#session-list")
+        sl.styles.width = max(20, int(sl.styles.width.value) - 2)
         event.stop()
 
-    def on_mouse_move(self, event: events.MouseMove) -> None:
-        if not self._dragging:
-            return
-        new_width = max(20, min(80, self.region.x + event.x))
-        self.app.query_one("#session-list").styles.width = new_width
-        event.stop()
-
-    def on_mouse_up(self, event: events.MouseUp) -> None:
-        self._dragging = False
-        self.release_mouse()
+    def on_mouse_scroll_down(self, event: events.MouseScrollDown) -> None:
+        sl = self.app.query_one("#session-list")
+        sl.styles.width = min(80, int(sl.styles.width.value) + 2)
         event.stop()
 
 
