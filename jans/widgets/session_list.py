@@ -101,15 +101,25 @@ class SessionList(Widget, can_focus=False):
             self.post_message(self.OrchestratorClicked())
             event.stop()
 
+    def _body_y(self, event_y: int) -> int:
+        """Convert widget-relative y to body-relative y using actual widget position."""
+        try:
+            body_region = self.query_one("#body", Static).region
+            return event_y - body_region.y
+        except Exception:
+            return event_y - 2
+
     def on_click(self, event: events.Click) -> None:
-        body_y = event.y - 2  # header(1) + orchestrator-btn(1)
+        body_y = self._body_y(event.y)
+        if body_y < 0:
+            return
         session = _session_at_line(self._sessions, body_y)
         if session is not None:
             self.post_message(self.SessionClicked(session))
 
     def on_mouse_move(self, event: events.MouseMove) -> None:
-        body_y = event.y - 2  # header(1) + orchestrator-btn(1)
-        session = _session_at_line(self._sessions, body_y)
+        body_y = self._body_y(event.y)
+        session = _session_at_line(self._sessions, body_y) if body_y >= 0 else None
         new_hover = body_y if session is not None else -1
         if new_hover != self._hover_y:
             self._hover_y = new_hover
