@@ -14,7 +14,7 @@ from jans.models import SESSION_ICON, Session, SessionState
 _HOVER_BG = "#313244"
 
 
-_ORCHESTRATOR_LABEL = "hands Claude"
+_ORCHESTRATOR_LABEL = "jans Claude"
 _ORCHESTRATOR_BG = "#1e1e2e"
 _ORCHESTRATOR_HOVER_BG = "#45475a"
 
