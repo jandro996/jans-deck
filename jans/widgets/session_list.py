@@ -7,7 +7,7 @@ from textual import events
 from textual.app import ComposeResult
 from textual.message import Message
 from textual.widget import Widget
-from textual.widgets import Label, Static
+from textual.widgets import Button, Label, Static
 
 from jans.models import SESSION_ICON, Session, SessionState
 
@@ -50,14 +50,20 @@ class SessionList(Widget, can_focus=False):
     }
     SessionList #orchestrator-btn {
         width: 100%;
-        padding: 0 1;
+        height: 1;
         background: #181825;
         color: #cba6f7;
         text-style: bold;
+        border: none;
         border-bottom: solid #313244;
     }
     SessionList #orchestrator-btn:hover {
         background: #45475a;
+    }
+    SessionList #orchestrator-btn:focus {
+        background: #45475a;
+        border: none;
+        border-bottom: solid #313244;
     }
     SessionList #body {
         width: 100%;
@@ -76,7 +82,7 @@ class SessionList(Widget, can_focus=False):
 
     def compose(self) -> ComposeResult:
         yield Label(" jans ", id="header")
-        yield Label(f" ◈ {_ORCHESTRATOR_LABEL}", id="orchestrator-btn")
+        yield Button(f" ◈ {_ORCHESTRATOR_LABEL}", id="orchestrator-btn")
         yield Static("", id="body", markup=False)
 
     def update_sessions(self, sessions: list[Session]) -> None:
@@ -90,11 +96,12 @@ class SessionList(Widget, can_focus=False):
     def _hovered_session(self) -> Session | None:
         return _session_at_line(self._sessions, self._hover_y)
 
-    def on_click(self, event: events.Click) -> None:
-        # Check if click is on the orchestrator button (y=1, height=1)
-        if event.y == 1:
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "orchestrator-btn":
             self.post_message(self.OrchestratorClicked())
-            return
+            event.stop()
+
+    def on_click(self, event: events.Click) -> None:
         body_y = event.y - 2  # header(1) + orchestrator-btn(1)
         session = _session_at_line(self._sessions, body_y)
         if session is not None:
