@@ -305,7 +305,11 @@ _STATUS_PLACEHOLDER = (
 def _open_orchestrator_tab() -> None:
     """Open the orchestrator Claude in a real iTerm2 tab."""
     import subprocess
+    from jans.core.log import log as _log
     cwd = str(_JANS_DIR)
+
+    # Write a helper shell script and open it via iTerm2's URL scheme
+    # which is more reliable than AppleScript from a subprocess
     script = f'''
 tell application "iTerm2"
     if (count of windows) = 0 then
@@ -320,7 +324,15 @@ tell application "iTerm2"
     end tell
 end tell
 '''
-    subprocess.run(["osascript", "-e", script], capture_output=True)
+    result = subprocess.run(
+        ["osascript", "-e", script],
+        capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        _log.error("failed to open iTerm2 tab: %s", result.stderr)
+        # Fallback: open a new Terminal.app window
+        fallback = f'tell application "Terminal" to do script "cd \\"{cwd}\\" && claude"'
+        subprocess.run(["osascript", "-e", fallback], capture_output=True)
 
 
 class HelmApp(App):
@@ -390,7 +402,6 @@ class HelmApp(App):
             log.info("loaded %d saved sessions", len(self._sessions))
             self._update_list()
             self.set_interval(3.0, self._refresh_states)
-            self.query_one(f"#{ORCHESTRATOR_ID}", TerminalWidget).focus()
             self.set_interval(0.5, self._check_commands)
             _open_orchestrator_tab()
             log.info("app mounted successfully")
