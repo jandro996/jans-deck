@@ -294,46 +294,6 @@ class ResizableDivider(Widget, can_focus=False):
 
 _JANS_DIR = Path(__file__).parent.parent  # ~/research/jans/
 
-_STATUS_PLACEHOLDER = (
-    "\n  [bold]jans[/bold] session manager\n\n"
-    "  [dim]The orchestrator Claude opened in a new iTerm2 tab.\n"
-    "  Wispr Flow works there natively.\n\n"
-    "  Click a session on the left to open it here.[/dim]"
-)
-
-
-def _open_orchestrator_tab() -> None:
-    """Open the orchestrator Claude in a real iTerm2 tab."""
-    import subprocess
-    from jans.core.log import log as _log
-    cwd = str(_JANS_DIR)
-
-    # Write a helper shell script and open it via iTerm2's URL scheme
-    # which is more reliable than AppleScript from a subprocess
-    script = f'''
-tell application "iTerm2"
-    if (count of windows) = 0 then
-        create window with default profile
-    end if
-    tell current window
-        create tab with default profile
-        tell current session of current tab
-            set name to "jans orchestrator"
-            write text "cd '{cwd}' && claude"
-        end tell
-    end tell
-end tell
-'''
-    result = subprocess.run(
-        ["osascript", "-e", script],
-        capture_output=True, text=True
-    )
-    if result.returncode != 0:
-        _log.error("failed to open iTerm2 tab: %s", result.stderr)
-        # Fallback: open a new Terminal.app window
-        fallback = f'tell application "Terminal" to do script "cd \\"{cwd}\\" && claude"'
-        subprocess.run(["osascript", "-e", fallback], capture_output=True)
-
 
 class HelmApp(App):
     CSS = """
@@ -393,7 +353,7 @@ class HelmApp(App):
         yield ResizableDivider(id="divider")
         with Horizontal(id="right-panel"):
             with ContentSwitcher(initial=ORCHESTRATOR_ID, id="switcher"):
-                yield Static(_STATUS_PLACEHOLDER, id=ORCHESTRATOR_ID, markup=True)
+                yield TerminalWidget(["claude"], cwd=str(_JANS_DIR), id=ORCHESTRATOR_ID)
         yield Label(self._status_text(), id="status-bar")
 
     def on_mount(self) -> None:
@@ -403,7 +363,6 @@ class HelmApp(App):
             self._update_list()
             self.set_interval(3.0, self._refresh_states)
             self.set_interval(0.5, self._check_commands)
-            _open_orchestrator_tab()
             log.info("app mounted successfully")
         except Exception:
             log.error("error in on_mount:\n%s", traceback.format_exc())
