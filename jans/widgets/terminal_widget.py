@@ -136,13 +136,12 @@ class TerminalWidget(Widget, can_focus=True):
             await asyncio.sleep(0.05)
 
     def _capture(self) -> str:
-        # Capture only the current visible screen - no scrollback history.
-        # History caused multiplied startup messages on each tmux resize.
         return _run([
             "tmux", "capture-pane",
             "-t", f"{self._session}:0",
-            "-p",  # print to stdout
-            "-e",  # include ANSI escape codes
+            "-p",        # print to stdout
+            "-e",        # include ANSI escape codes
+            "-S", "-500" # include up to 500 lines of history
         ])
 
     def _sync_size(self) -> None:
