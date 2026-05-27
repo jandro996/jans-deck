@@ -39,6 +39,58 @@ class _OrchestratorHeader(Widget, can_focus=False):
         event.stop()
 
 
+class _SessionBody(Widget, can_focus=False):
+    """Renders the session list and handles clicks with local coordinates."""
+
+    DEFAULT_CSS = """
+    _SessionBody {
+        width: 100%;
+        height: 1fr;
+        padding: 0 1;
+        background: transparent;
+        border: none;
+        overflow: hidden hidden;
+    }
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._sessions: list[Session] = []
+        self._hover_y: int = -1
+        self._text = Text()
+
+    def refresh_sessions(self, sessions: list[Session]) -> None:
+        self._sessions = sessions
+        self._text = _render_sessions(sessions, self._hover_y)
+        self.refresh()
+
+    def hovered_session(self) -> Session | None:
+        return _session_at_line(self._sessions, self._hover_y)
+
+    def render(self):
+        return self._text
+
+    def on_click(self, event: events.Click) -> None:
+        session = _session_at_line(self._sessions, event.y)
+        if session is not None:
+            self.post_message(SessionList.SessionClicked(session))
+        event.stop()
+
+    def on_mouse_move(self, event: events.MouseMove) -> None:
+        session = _session_at_line(self._sessions, event.y)
+        new_hover = event.y if session is not None else -1
+        if new_hover != self._hover_y:
+            self._hover_y = new_hover
+            self._text = _render_sessions(self._sessions, self._hover_y)
+            self.refresh()
+
+    def on_leave(self, _: events.Leave) -> None:
+        if self._hover_y != -1:
+            self._hover_y = -1
+            self._text = _render_sessions(self._sessions, -1)
+            self.refresh()
+
+
 class SessionList(Widget, can_focus=False):
 
     class SessionClicked(Message):
@@ -60,14 +112,6 @@ class SessionList(Widget, can_focus=False):
         background: $surface;
         padding: 0;
     }
-    SessionList #body {
-        width: 100%;
-        height: 1fr;
-        padding: 0 1;
-        background: transparent;
-        border: none;
-        overflow: hidden hidden;
-    }
     """
 
     def __init__(self, **kwargs):
@@ -77,47 +121,18 @@ class SessionList(Widget, can_focus=False):
 
     def compose(self) -> ComposeResult:
         yield _OrchestratorHeader(id="orchestrator-btn")
-        yield Static("", id="body", markup=False)
+        yield _SessionBody(id="body")
 
     def update_sessions(self, sessions: list[Session]) -> None:
         self._sessions = sessions
         self._refresh_body()
 
     def _refresh_body(self) -> None:
-        body = self.query_one("#body", Static)
-        body.update(_render_sessions(self._sessions, self._hover_y))
+        body = self.query_one("#body", _SessionBody)
+        body.refresh_sessions(self._sessions)
 
     def _hovered_session(self) -> Session | None:
-        return _session_at_line(self._sessions, self._hover_y)
-
-    def _body_y(self, event_y: int) -> int:
-        """Convert widget-relative y to body-relative y using actual widget position."""
-        try:
-            body_region = self.query_one("#body", Static).region
-            return event_y - body_region.y
-        except Exception:
-            return event_y - 2
-
-    def on_click(self, event: events.Click) -> None:
-        body_y = self._body_y(event.y)
-        if body_y < 0:
-            return
-        session = _session_at_line(self._sessions, body_y)
-        if session is not None:
-            self.post_message(self.SessionClicked(session))
-
-    def on_mouse_move(self, event: events.MouseMove) -> None:
-        body_y = self._body_y(event.y)
-        session = _session_at_line(self._sessions, body_y) if body_y >= 0 else None
-        new_hover = body_y if session is not None else -1
-        if new_hover != self._hover_y:
-            self._hover_y = new_hover
-            self._refresh_body()
-
-    def on_leave(self, event: events.Leave) -> None:
-        if self._hover_y != -1:
-            self._hover_y = -1
-            self._refresh_body()
+        return self.query_one("#body", _SessionBody).hovered_session()
 
 def _render_sessions(sessions: list[Session], hover_y: int = -1) -> Text:
     text = Text(no_wrap=True, overflow="crop")
