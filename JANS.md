@@ -1,15 +1,16 @@
 # jans
 
-Terminal dashboard for managing Claude Code sessions. Single-window TUI with session list on the left and an orchestrator Claude on the right.
+Terminal dashboard for managing Claude Code sessions. Single-window TUI: session list on the left, embedded Claude terminal on the right.
 
 ## What it does
 
-- **Left panel**: list of sessions with state (processing / waiting / terminated / paused) and time since last activity
-- **Right panel**: embedded session terminals (tmux-backed, scrollable, 500 lines history)
-- **Orchestrator**: Claude opens automatically in a real iTerm2 tab (Wispr Flow compatible)
-- **Session creation**: F2 research, F3 task, F4 load existing directory
-- **Persistence**: saves on `ctrl+q` or SIGTERM (closing iTerm2 tab), restores as paused on next open
-- **Voice control**: orchestrator reads `CLAUDE.md` and uses `jans-ctl` commands
+- **Left panel**: session list with state indicators, time since last activity, and a `◈ jans Claude` button to return to the orchestrator
+- **Right panel**: embedded tmux-backed terminals, scrollable (500 lines history), supports Wispr Flow via paste mode
+- **Orchestrator**: Claude starts embedded in the right panel, reads `CLAUDE.md` automatically, controlled via `jans-ctl`
+- **Voice control**: Wispr Flow works in paste mode — dictate to the orchestrator Claude which calls `jans-ctl` commands
+- **Session creation**: F2 research, F3 task, F4 load existing directory (with nickname)
+- **Persistence**: sessions saved on `ctrl+q` or SIGTERM; Claude processes keep running in background when jans closes; reconnects on reopen
+- **Session naming**: give sessions a nickname on load (F4), rename anytime with F8
 
 ## Shortcuts
 
@@ -18,70 +19,89 @@ Terminal dashboard for managing Claude Code sessions. Single-window TUI with ses
 | `F1` | Help (all shortcuts) |
 | `F2` | New research session (creates `~/research/<name>/`) |
 | `F3` | New task session |
-| `F4` | Load existing directory |
+| `F4` | Load existing directory (with optional nickname) |
 | `F5` / `F6` | Narrow / widen left panel |
-| `F7` | Delete hovered session |
+| `F7` | Delete hovered session (kills process) |
 | `F8` | Rename hovered session |
-| `ctrl+h` | Go to home panel |
-| `ctrl+q` | Save state and quit |
-| click | Open/resume a session |
+| `ctrl+h` | Go to orchestrator panel |
+| `ctrl+q` | Save state and quit (keeps processes running) |
+| click | Open / resume a session |
+| `◈ jans Claude` | Click to go to orchestrator (same as ctrl+h) |
 
 ## Architecture
 
 ```
 ~/research/jans/
+├── CLAUDE.md                # orchestrator system prompt (auto-loaded by Claude Code)
+├── ORCHESTRATOR.md          # extended orchestrator context
 ├── jans/
-│   ├── __main__.py          # entry point, sets tab title
+│   ├── __main__.py          # entry point, tab title, signal handlers
 │   ├── app.py               # main Textual app (HelmApp)
 │   ├── models.py            # Session dataclass, SessionState enum
+│   ├── ctl.py               # jans-ctl CLI for voice/programmatic control
 │   ├── core/
-│   │   ├── log.py           # persistent logging to ~/.jans/jans.log
-│   │   ├── state_detector.py # reads ~/.claude/ to detect session state
-│   │   └── persistence.py   # save/load ~/.jans/state.json
+│   │   ├── log.py           # persistent logging → ~/.jans/jans.log
+│   │   ├── state_detector.py # reads ~/.claude/ to detect session states
+│   │   ├── persistence.py   # save/load ~/.jans/state.json
+│   │   └── commands.py      # IPC via ~/.jans/pending_cmd.json for jans-ctl
 │   └── widgets/
-│       ├── session_list.py  # left panel - Static-based, no DOM flicker
-│       └── terminal_widget.py # right panel - tmux-backed terminal
+│       ├── session_list.py  # left panel — Rich text Static, no DOM flicker
+│       └── terminal_widget.py # right panel — tmux-backed, scrollable
 └── pyproject.toml
 ```
 
-**State detection** reads `~/.claude/sessions/<pid>.json` and `~/.claude/projects/<project>/<session-id>.jsonl`:
-- Modified < 15s ago → `processing`
-- Last message `assistant` + quiet > 15s → `waiting`
-- PID dead → `terminated`
-- Loaded from previous run → `paused`
+## State detection
 
-Key bug fixed: Claude Code replaces both `/` and `.` with `-` in project directory names. Our path construction must do the same (`cwd.replace("/", "-").replace(".", "-")`).
+Reads `~/.claude/sessions/<pid>.json` and `~/.claude/projects/<project>/<session-id>.jsonl`:
 
-**Terminal widget** uses tmux (`jans-<id>` sessions) + `tmux capture-pane -e` + `Text.from_ansi()` for rendering. Input via `tmux send-keys`.
+| State | Criterion |
+|-------|-----------|
+| `processing` ▶ | JSONL modified < 15s ago |
+| `waiting` ● | Last message = `assistant` + quiet > 15s |
+| `terminated` ✗ | PID no longer alive |
+| `paused` ◉ | Loaded from previous run, not yet resumed |
 
-**Session list** renders as a single `Static` with Rich text (no ListView DOM) to avoid flicker on 3s refresh.
+**cwd matching is case-insensitive** (macOS `IdeaProjects` vs `ideaProjects`) via `Path.resolve().lower()`.
 
-## Known issues / decisions
+**session_id sync**: jans stores synthetic UUIDs internally; on each refresh it finds the real Claude session ID by matching `cwd` in `~/.claude/sessions/` and updates accordingly.
 
-- External Claude sessions (opened outside jans) appear in the list but can't be opened from jans (no tmux session for them)
-- Clicking an external session does nothing useful - to be fixed (filter or mark as external)
-- Terminal rendering ("rayas") - Claude Code's own separator lines are more visible inside jans than in a regular terminal. Not a rendering bug.
-- The orchestrator Claude starts in `~/research/jans/` (default cwd). Consider starting it in `~/research/` instead.
+## Session lifecycle
+
+- **Create** (F2/F3/F4): starts Claude in a new tmux session (`jans-term-<uuid8>`)
+- **Close jans**: tmux sessions keep running, state saved to `~/.jans/state.json`
+- **Reopen jans**: sessions load as `paused`; clicking reconnects to the live tmux session if still running, or starts fresh with `claude --continue`
+- **F7 delete**: kills the tmux session and removes from list (never deletes files on disk)
+
+## Voice control (Wispr Flow)
+
+1. Configure Wispr Flow to use **paste mode** (clipboard + Cmd+V)
+2. Dictate to the `◈ jans Claude` orchestrator
+3. Claude reads `CLAUDE.md` and calls `jans-ctl` automatically
+
+```bash
+jans-ctl list                          # list sessions
+jans-ctl new-research <name>           # create research session
+jans-ctl new-task <name>               # create task session
+jans-ctl load <path> [nickname]        # load directory
+jans-ctl rename <current> <new>        # rename session
+jans-ctl delete <name>                 # remove from jans (no file deletion)
+jans-ctl switch <name>                 # switch panel to session
+jans-ctl home                          # return to orchestrator
+```
+
+## Known bugs / quirks
+
+- Terminal rendering ("rayas"): Claude Code's separator lines are more visible in the embedded widget than in a real terminal — not a jans bug
+- Scroll in embedded terminal: uses `tmux capture-pane -S -500` (500 lines history); very long sessions may lose earlier output
 
 ## Backlog
 
-### High priority
-- [ ] Filter external sessions (not created by jans) from the list, or mark them clearly as read-only
-- [ ] Clicking a session should focus the right panel on that session's terminal
-- [ ] Resume paused sessions properly (currently calls `claude --resume <id>` but external sessions won't have a tmux pane)
-
-### Medium priority
-- [ ] Session branching: `claude --resume <id> --fork-session` to fork a session at its current point
-- [ ] launchd hook to save state on system shutdown (not just on jans exit)
-- [ ] Sound/visual notification when a session changes state (e.g. goes from processing to waiting)
-- [ ] Session naming: allow renaming sessions from within jans
-- [ ] Show session type badge (research vs task)
-
-### Low priority / ideas
-- [ ] Search/filter sessions by name or directory
-- [ ] Session log view: show last N messages from a session's `.jsonl`
-- [ ] Multi-repo support: sessions from different repos grouped visually
-- [ ] Local model support (Ollama) for the orchestrator
+- [ ] Session branching: `claude --resume <id> --fork-session`
+- [ ] launchd hook to save state on macOS shutdown
+- [ ] Notification (sound/visual) when a session changes from processing → waiting
+- [ ] Session type badge (research / task / loaded)
+- [ ] Search/filter sessions by name
+- [ ] Session log view: show last N messages from `.jsonl`
 
 ## Installation
 
@@ -91,9 +111,7 @@ pip install -e .
 jans
 ```
 
-Dependencies: `textual`, `pyte` (unused now but installed), `ptyprocess` (unused now), `watchfiles` (unused now). Only `textual` and `tmux` are actually needed.
-
-Requires tmux: `brew install tmux`
+Requires: `textual`, `tmux` (`brew install tmux`)
 
 ## State files
 
@@ -101,5 +119,7 @@ Requires tmux: `brew install tmux`
 |------|---------|
 | `~/.jans/state.json` | Saved sessions (persists across restarts) |
 | `~/.jans/jans.log` | Application log (DEBUG level) |
+| `~/.jans/pending_cmd.json` | IPC: jans-ctl → jans app |
+| `~/.jans/cmd_result.json` | IPC: jans app → jans-ctl |
 | `~/.claude/sessions/*.json` | Claude Code session registry (read-only) |
-| `~/.claude/projects/<key>/<id>.jsonl` | Conversation history per session (read-only) |
+| `~/.claude/projects/<key>/<id>.jsonl` | Conversation history (read-only) |
