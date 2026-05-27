@@ -131,7 +131,7 @@ def _render_sessions(sessions: list[Session], hover_y: int = -1) -> Text:
         delta = int((datetime.now() - s.last_activity).total_seconds())
         age = f"{delta}s" if delta < 60 else (f"{delta // 60}m" if delta < 3600 else f"{delta // 3600}h")
         short_cwd = s.cwd.replace(str(Path.home()), "~")
-        hovered = hover_y in (line, line + 1)
+        hovered = hover_y in (line, line + 1, line + 2)
         bg = _HOVER_BG if hovered else None
         dim_style = Style(dim=True, bgcolor=bg)
         cwd_style = Style(color="#585b70", bgcolor=bg)
@@ -141,7 +141,8 @@ def _render_sessions(sessions: list[Session], hover_y: int = -1) -> Text:
         text.append(name, style=Style(bold=True, bgcolor=bg))
         text.append(f" {age.rjust(4)}\n", style=dim_style)
         text.append(f"   {short_cwd}\n", style=cwd_style)
-        line += 2
+        text.append("\n")  # separator line - larger click target
+        line += 3
 
     if paused:
         text.append("── paused ──\n", style="dim")
@@ -171,9 +172,9 @@ def _session_at_line(sessions: list[Session], y: int) -> Session | None:
             return None
         line += 1
         for s in paused:
-            if y in (line, line + 1):
+            if y in (line, line + 1, line + 2):
                 return s
-            line += 2
+            line += 3
 
     if paused and active:
         if y == line:
@@ -185,8 +186,8 @@ def _session_at_line(sessions: list[Session], y: int) -> Session | None:
             return None
         line += 1
         for s in active:
-            if y in (line, line + 1):
+            if y in (line, line + 1, line + 2):
                 return s
-            line += 2
+            line += 3
 
     return None
