@@ -181,7 +181,7 @@ class HelpScreen(ModalScreen):
         table.add_row("F2", "New research session")
         table.add_row("F3", "New task session")
         table.add_row("F4", "Load existing directory")
-        table.add_row("D", "Delete hovered session")
+        table.add_row("F7", "Delete hovered session")
         section("Panel resize")
         table.add_row("F5", "Narrow left panel")
         table.add_row("F6", "Widen left panel")
@@ -284,6 +284,7 @@ class HelmApp(App):
         Binding("f4", "load_dir", "F4 Load", show=True),
         Binding("f5", "panel_narrow", "F5 ←", show=False),
         Binding("f6", "panel_widen", "F6 →", show=False),
+        Binding("f7", "delete_hovered", "F7 Delete", show=False),
         Binding("ctrl+q", "quit_app", "Quit", show=True),
     ]
 
@@ -496,6 +497,23 @@ class HelmApp(App):
 
     def action_show_help(self) -> None:
         self.push_screen(HelpScreen())
+
+    def action_delete_hovered(self) -> None:
+        sl = self.query_one("#session-list", SessionList)
+        session = sl._hovered_session()
+        if session is not None:
+            log.info("deleting session %s", session.name)
+            if session.terminal_id:
+                try:
+                    widget = self.query_one(f"#{session.terminal_id}", TerminalWidget)
+                    widget.cleanup()
+                    widget.remove()
+                except Exception:
+                    pass
+            self._sessions = [s for s in self._sessions if s.session_id != session.session_id]
+            if self._active_terminal_id == session.terminal_id:
+                self.action_go_home()
+            self._update_list()
 
     def action_panel_narrow(self) -> None:
         sl = self.query_one("#session-list")

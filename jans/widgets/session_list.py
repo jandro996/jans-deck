@@ -83,13 +83,6 @@ class SessionList(Widget, can_focus=False):
             self._hover_y = -1
             self._refresh_body()
 
-    def on_key(self, event: events.Key) -> None:
-        if event.key == "d":
-            session = self._hovered_session()
-            if session is not None:
-                self.post_message(self.SessionDeleteRequested(session))
-                event.stop()
-
     def on_click(self, event: events.Click) -> None:
         body_y = event.y - 1
         session = _session_at_line(self._sessions, body_y)
