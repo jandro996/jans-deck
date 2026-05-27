@@ -7,7 +7,7 @@ from textual import events
 from textual.app import ComposeResult
 from textual.message import Message
 from textual.widget import Widget
-from textual.widgets import Button, Label, Static
+from textual.widgets import Label, Static
 
 from jans.models import SESSION_ICON, Session, SessionState
 
@@ -17,6 +17,33 @@ _HOVER_BG = "#313244"
 _ORCHESTRATOR_LABEL = "jans Claude"
 _ORCHESTRATOR_BG = "#1e1e2e"
 _ORCHESTRATOR_HOVER_BG = "#45475a"
+
+
+class _OrchestratorBtn(Widget, can_focus=False):
+    """Clickable label that fires OrchestratorClicked on the parent SessionList."""
+
+    DEFAULT_CSS = """
+    _OrchestratorBtn {
+        width: 100%;
+        height: 1;
+        padding: 0 1;
+        background: #181825;
+        color: #cba6f7;
+        text-style: bold;
+        border-bottom: solid #313244;
+    }
+    _OrchestratorBtn:hover {
+        background: #45475a;
+    }
+    """
+
+    def render(self):
+        from rich.text import Text
+        return Text(f" ◈ {_ORCHESTRATOR_LABEL}", style="bold #cba6f7")
+
+    def on_click(self, event: events.Click) -> None:
+        self.post_message(SessionList.OrchestratorClicked())
+        event.stop()
 
 
 class SessionList(Widget, can_focus=False):
@@ -48,23 +75,6 @@ class SessionList(Widget, can_focus=False):
         padding: 0 1;
         text-style: bold;
     }
-    SessionList #orchestrator-btn {
-        width: 100%;
-        height: 1;
-        background: #181825;
-        color: #cba6f7;
-        text-style: bold;
-        border: none;
-        border-bottom: solid #313244;
-    }
-    SessionList #orchestrator-btn:hover {
-        background: #45475a;
-    }
-    SessionList #orchestrator-btn:focus {
-        background: #45475a;
-        border: none;
-        border-bottom: solid #313244;
-    }
     SessionList #body {
         width: 100%;
         height: 1fr;
@@ -82,7 +92,7 @@ class SessionList(Widget, can_focus=False):
 
     def compose(self) -> ComposeResult:
         yield Label(" jans ", id="header")
-        yield Button(f" ◈ {_ORCHESTRATOR_LABEL}", id="orchestrator-btn")
+        yield _OrchestratorBtn(id="orchestrator-btn")
         yield Static("", id="body", markup=False)
 
     def update_sessions(self, sessions: list[Session]) -> None:
@@ -95,11 +105,6 @@ class SessionList(Widget, can_focus=False):
 
     def _hovered_session(self) -> Session | None:
         return _session_at_line(self._sessions, self._hover_y)
-
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "orchestrator-btn":
-            self.post_message(self.OrchestratorClicked())
-            event.stop()
 
     def _body_y(self, event_y: int) -> int:
         """Convert widget-relative y to body-relative y using actual widget position."""
