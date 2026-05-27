@@ -4,19 +4,25 @@ Terminal dashboard for managing Claude Code sessions. Single-window TUI with ses
 
 ## What it does
 
-- **Left panel**: list of Claude sessions with state (processing / waiting / terminated / paused) and time since last activity
-- **Right panel**: embedded Claude session (the orchestrator) running in a tmux pane
-- **Session creation**: F2 for new research session, F3 for new task session
-- **Persistence**: saves session state on exit, restores paused sessions on next open (`~/.jans/state.json`)
-- **Tab title**: sets terminal tab to "jans" on launch
+- **Left panel**: list of sessions with state (processing / waiting / terminated / paused) and time since last activity
+- **Right panel**: embedded session terminals (tmux-backed, scrollable, 500 lines history)
+- **Orchestrator**: Claude opens automatically in a real iTerm2 tab (Wispr Flow compatible)
+- **Session creation**: F2 research, F3 task, F4 load existing directory
+- **Persistence**: saves on `ctrl+q` or SIGTERM (closing iTerm2 tab), restores as paused on next open
+- **Voice control**: orchestrator reads `CLAUDE.md` and uses `jans-ctl` commands
 
 ## Shortcuts
 
 | Key | Action |
 |-----|--------|
+| `F1` | Help (all shortcuts) |
 | `F2` | New research session (creates `~/research/<name>/`) |
 | `F3` | New task session |
-| `ctrl+h` | Go back to orchestrator (home) |
+| `F4` | Load existing directory |
+| `F5` / `F6` | Narrow / widen left panel |
+| `F7` | Delete hovered session |
+| `F8` | Rename hovered session |
+| `ctrl+h` | Go to home panel |
 | `ctrl+q` | Save state and quit |
 | click | Open/resume a session |
 
