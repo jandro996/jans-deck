@@ -486,6 +486,10 @@ class HelmApp(App):
         summary = "  ".join(parts) if parts else "[dim]no active sessions[/dim]"
         return f"  {summary}   [dim]F1 help  F2 research  F3 task  F4 load  F5/F6 resize  ctrl+q quit[/dim]"
 
+    @on(SessionList.OrchestratorClicked)
+    def orchestrator_clicked(self, _) -> None:
+        self.action_go_home()
+
     @on(SessionList.SessionClicked)
     def session_clicked(self, event: SessionList.SessionClicked) -> None:
         session = event.session

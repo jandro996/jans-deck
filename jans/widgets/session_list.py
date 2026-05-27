@@ -14,6 +14,11 @@ from jans.models import SESSION_ICON, Session, SessionState
 _HOVER_BG = "#313244"
 
 
+_ORCHESTRATOR_LABEL = "hands Claude"
+_ORCHESTRATOR_BG = "#1e1e2e"
+_ORCHESTRATOR_HOVER_BG = "#45475a"
+
+
 class SessionList(Widget, can_focus=False):
 
     class SessionClicked(Message):
@@ -25,6 +30,9 @@ class SessionList(Widget, can_focus=False):
         def __init__(self, session: Session):
             super().__init__()
             self.session = session
+
+    class OrchestratorClicked(Message):
+        pass
 
     DEFAULT_CSS = """
     SessionList {
@@ -39,6 +47,17 @@ class SessionList(Widget, can_focus=False):
         width: 100%;
         padding: 0 1;
         text-style: bold;
+    }
+    SessionList #orchestrator-btn {
+        width: 100%;
+        padding: 0 1;
+        background: #181825;
+        color: #cba6f7;
+        text-style: bold;
+        border-bottom: solid #313244;
+    }
+    SessionList #orchestrator-btn:hover {
+        background: #45475a;
     }
     SessionList #body {
         width: 100%;
@@ -57,6 +76,7 @@ class SessionList(Widget, can_focus=False):
 
     def compose(self) -> ComposeResult:
         yield Label(" jans ", id="header")
+        yield Label(f" ◈ {_ORCHESTRATOR_LABEL}", id="orchestrator-btn")
         yield Static("", id="body", markup=False)
 
     def update_sessions(self, sessions: list[Session]) -> None:
@@ -70,8 +90,18 @@ class SessionList(Widget, can_focus=False):
     def _hovered_session(self) -> Session | None:
         return _session_at_line(self._sessions, self._hover_y)
 
+    def on_click(self, event: events.Click) -> None:
+        # Check if click is on the orchestrator button (y=1, height=1)
+        if event.y == 1:
+            self.post_message(self.OrchestratorClicked())
+            return
+        body_y = event.y - 2  # header(1) + orchestrator-btn(1)
+        session = _session_at_line(self._sessions, body_y)
+        if session is not None:
+            self.post_message(self.SessionClicked(session))
+
     def on_mouse_move(self, event: events.MouseMove) -> None:
-        body_y = event.y - 1
+        body_y = event.y - 2  # header(1) + orchestrator-btn(1)
         session = _session_at_line(self._sessions, body_y)
         new_hover = body_y if session is not None else -1
         if new_hover != self._hover_y:
@@ -82,13 +112,6 @@ class SessionList(Widget, can_focus=False):
         if self._hover_y != -1:
             self._hover_y = -1
             self._refresh_body()
-
-    def on_click(self, event: events.Click) -> None:
-        body_y = event.y - 1
-        session = _session_at_line(self._sessions, body_y)
-        if session is not None:
-            self.post_message(self.SessionClicked(session))
-
 
 def _render_sessions(sessions: list[Session], hover_y: int = -1) -> Text:
     text = Text(no_wrap=True, overflow="crop")
