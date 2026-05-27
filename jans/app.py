@@ -294,9 +294,33 @@ class ResizableDivider(Widget, can_focus=False):
 
 _JANS_DIR = Path(__file__).parent.parent  # ~/research/jans/
 
+_STATUS_PLACEHOLDER = (
+    "\n  [bold]jans[/bold] session manager\n\n"
+    "  [dim]The orchestrator Claude opened in a new iTerm2 tab.\n"
+    "  Wispr Flow works there natively.\n\n"
+    "  Click a session on the left to open it here.[/dim]"
+)
 
-def _orchestrator_cmd() -> list[str]:
-    return ["claude"]
+
+def _open_orchestrator_tab() -> None:
+    """Open the orchestrator Claude in a real iTerm2 tab."""
+    import subprocess
+    cwd = str(_JANS_DIR)
+    script = f'''
+tell application "iTerm2"
+    if (count of windows) = 0 then
+        create window with default profile
+    end if
+    tell current window
+        create tab with default profile
+        tell current session of current tab
+            set name to "jans orchestrator"
+            write text "cd '{cwd}' && claude"
+        end tell
+    end tell
+end tell
+'''
+    subprocess.run(["osascript", "-e", script], capture_output=True)
 
 
 class HelmApp(App):
@@ -357,7 +381,7 @@ class HelmApp(App):
         yield ResizableDivider(id="divider")
         with Horizontal(id="right-panel"):
             with ContentSwitcher(initial=ORCHESTRATOR_ID, id="switcher"):
-                yield TerminalWidget(_orchestrator_cmd(), cwd=str(_JANS_DIR), id=ORCHESTRATOR_ID)
+                yield Static(_STATUS_PLACEHOLDER, id=ORCHESTRATOR_ID, markup=True)
         yield Label(self._status_text(), id="status-bar")
 
     def on_mount(self) -> None:
@@ -368,6 +392,7 @@ class HelmApp(App):
             self.set_interval(3.0, self._refresh_states)
             self.query_one(f"#{ORCHESTRATOR_ID}", TerminalWidget).focus()
             self.set_interval(0.5, self._check_commands)
+            _open_orchestrator_tab()
             log.info("app mounted successfully")
         except Exception:
             log.error("error in on_mount:\n%s", traceback.format_exc())
@@ -588,7 +613,6 @@ class HelmApp(App):
         switcher = self.query_one("#switcher", ContentSwitcher)
         switcher.current = ORCHESTRATOR_ID
         self._active_terminal_id = ORCHESTRATOR_ID
-        self.query_one(f"#{ORCHESTRATOR_ID}", TerminalWidget).focus()
 
     def action_new_research(self) -> None:
         self._show_new_session_dialog("research")
