@@ -9,7 +9,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.screen import ModalScreen
 from textual.widget import Widget
-from textual.widgets import Button, ContentSwitcher, DirectoryTree, Input, Label, ListItem, ListView
+from textual.widgets import Button, ContentSwitcher, DirectoryTree, Input, Label, ListItem, ListView, Static
 
 from jans.core.commands import read_pending_command, write_result
 from jans.core.log import log
