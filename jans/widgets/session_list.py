@@ -21,6 +21,11 @@ class SessionList(Widget, can_focus=False):
             super().__init__()
             self.session = session
 
+    class SessionDeleteRequested(Message):
+        def __init__(self, session: Session):
+            super().__init__()
+            self.session = session
+
     DEFAULT_CSS = """
     SessionList {
         width: 38;
@@ -62,13 +67,13 @@ class SessionList(Widget, can_focus=False):
         body = self.query_one("#body", Static)
         body.update(_render_sessions(self._sessions, self._hover_y))
 
+    def _hovered_session(self) -> Session | None:
+        return _session_at_line(self._sessions, self._hover_y)
+
     def on_mouse_move(self, event: events.MouseMove) -> None:
         body_y = event.y - 1
         session = _session_at_line(self._sessions, body_y)
-        is_clickable = session is not None and (
-            session.terminal_id is not None or session.state == SessionState.PAUSED
-        )
-        new_hover = body_y if is_clickable else -1
+        new_hover = body_y if session is not None else -1
         if new_hover != self._hover_y:
             self._hover_y = new_hover
             self._refresh_body()
@@ -77,6 +82,13 @@ class SessionList(Widget, can_focus=False):
         if self._hover_y != -1:
             self._hover_y = -1
             self._refresh_body()
+
+    def on_key(self, event: events.Key) -> None:
+        if event.key == "d":
+            session = self._hovered_session()
+            if session is not None:
+                self.post_message(self.SessionDeleteRequested(session))
+                event.stop()
 
     def on_click(self, event: events.Click) -> None:
         body_y = event.y - 1

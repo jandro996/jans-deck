@@ -181,6 +181,7 @@ class HelpScreen(ModalScreen):
         table.add_row("F2", "New research session")
         table.add_row("F3", "New task session")
         table.add_row("F4", "Load existing directory")
+        table.add_row("D", "Delete hovered session")
         section("Panel resize")
         table.add_row("F5", "Narrow left panel")
         table.add_row("F6", "Widen left panel")
@@ -361,6 +362,22 @@ class HelmApp(App):
             self._resume_session(session)
         else:
             self._switch_to(session)
+
+    @on(SessionList.SessionDeleteRequested)
+    def session_delete_requested(self, event: SessionList.SessionDeleteRequested) -> None:
+        session = event.session
+        log.info("deleting session %s", session.name)
+        if session.terminal_id:
+            try:
+                widget = self.query_one(f"#{session.terminal_id}", TerminalWidget)
+                widget.cleanup()
+                widget.remove()
+            except Exception:
+                pass
+        self._sessions = [s for s in self._sessions if s.session_id != session.session_id]
+        if self._active_terminal_id == session.terminal_id:
+            self.action_go_home()
+        self._update_list()
 
     def _switch_to(self, session: Session) -> None:
         if session.terminal_id is None:
