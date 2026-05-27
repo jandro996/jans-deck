@@ -13,7 +13,7 @@ from textual.widgets import Button, ContentSwitcher, DirectoryTree, Input, Label
 
 from jans.core.log import log
 from jans.core.persistence import load_saved_sessions, save_sessions
-from jans.core.state_detector import detect_state, load_active_claude_sessions
+from jans.core.state_detector import detect_state, find_real_session_id, load_active_claude_sessions
 from jans.models import Session, SessionState
 from jans.widgets.session_list import SessionList
 from jans.widgets.terminal_widget import TerminalWidget
@@ -327,6 +327,18 @@ class HelmApp(App):
                 if s.state == SessionState.PAUSED:
                     new_sessions.append(s)
                     continue
+
+                # If this is a jans-created session and detect_state can't find
+                # its JSONL (synthetic UUID), look up the real Claude session ID.
+                if s.terminal_id is not None:
+                    from jans.core.state_detector import _find_jsonl
+                    if not _find_jsonl(s.session_id, s.cwd):
+                        real_id = find_real_session_id(s.cwd)
+                        if real_id and real_id != s.session_id:
+                            log.debug("syncing session_id for %s: %s -> %s", s.name, s.session_id[:8], real_id[:8])
+                            s = dataclasses.replace(s, session_id=real_id)
+                            changed = True
+
                 new_state, last_activity = detect_state(s)
                 if new_state != s.state or last_activity != s.last_activity:
                     log.debug("session %s: %s -> %s", s.name, s.state.value, new_state.value)

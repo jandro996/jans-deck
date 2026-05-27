@@ -82,3 +82,26 @@ def load_active_claude_sessions() -> list[Session]:
             pass
 
     return sessions
+
+
+def find_real_session_id(cwd: str) -> str | None:
+    """Find the most recent active Claude session ID for a given cwd."""
+    if not CLAUDE_SESSIONS.exists():
+        return None
+    best = None
+    best_mtime = 0.0
+    for f in CLAUDE_SESSIONS.glob("*.json"):
+        try:
+            data = json.loads(f.read_text())
+            if data.get("cwd") != cwd:
+                continue
+            pid = data.get("pid")
+            if pid and not _is_pid_alive(pid):
+                continue
+            mtime = f.stat().st_mtime
+            if mtime > best_mtime:
+                best_mtime = mtime
+                best = data.get("sessionId")
+        except Exception:
+            pass
+    return best
