@@ -14,32 +14,27 @@ from jans.models import SESSION_ICON, Session, SessionState
 _HOVER_BG = "#313244"
 
 
-_ORCHESTRATOR_LABEL = "jans Claude"
-_ORCHESTRATOR_BG = "#1e1e2e"
-_ORCHESTRATOR_HOVER_BG = "#45475a"
-
-
-class _OrchestratorBtn(Widget, can_focus=False):
-    """Clickable label that fires OrchestratorClicked on the parent SessionList."""
+class _OrchestratorHeader(Widget, can_focus=False):
+    """Combined header + orchestrator button. Click anywhere to go to Claude."""
 
     DEFAULT_CSS = """
-    _OrchestratorBtn {
+    _OrchestratorHeader {
         width: 100%;
-        height: 1;
-        padding: 0 1;
-        background: #181825;
-        color: #cba6f7;
-        text-style: bold;
+        height: 3;
+        background: $accent-darken-2;
         border-bottom: solid #313244;
     }
-    _OrchestratorBtn:hover {
-        background: #45475a;
+    _OrchestratorHeader:hover {
+        background: $accent-darken-1;
     }
     """
 
     def render(self):
         from rich.text import Text
-        return Text(f" ◈ {_ORCHESTRATOR_LABEL}", style="bold #cba6f7")
+        t = Text(justify="center")
+        t.append(" jans \n", style="bold white")
+        t.append(" ◈ jans Claude ", style="bold #cba6f7")
+        return t
 
     def on_click(self, event: events.Click) -> None:
         self.post_message(SessionList.OrchestratorClicked())
@@ -67,14 +62,6 @@ class SessionList(Widget, can_focus=False):
         background: $surface;
         padding: 0;
     }
-    SessionList #header {
-        text-align: center;
-        background: $accent-darken-2;
-        color: $text;
-        width: 100%;
-        padding: 0 1;
-        text-style: bold;
-    }
     SessionList #body {
         width: 100%;
         height: 1fr;
@@ -91,8 +78,7 @@ class SessionList(Widget, can_focus=False):
         self._hover_y: int = -1
 
     def compose(self) -> ComposeResult:
-        yield Label(" jans ", id="header")
-        yield _OrchestratorBtn(id="orchestrator-btn")
+        yield _OrchestratorHeader(id="orchestrator-btn")
         yield Static("", id="body", markup=False)
 
     def update_sessions(self, sessions: list[Session]) -> None:
