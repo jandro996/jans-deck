@@ -312,14 +312,13 @@ class HelmApp(App):
             log.error("error in on_mount:\n%s", traceback.format_exc())
 
     def _refresh_states(self) -> None:
-        try:
-            new_sessions = []
-            for s in self._sessions:
+        new_sessions = []
+        for s in self._sessions:
+            try:
                 if s.state == SessionState.PAUSED:
                     new_sessions.append(s)
                     continue
 
-                # Always sync to the most recent real Claude session for this cwd
                 real_id = find_real_session_id(s.cwd)
                 if real_id and real_id != s.session_id:
                     log.debug("syncing %s session_id -> %s", s.name, real_id[:8])
@@ -330,10 +329,14 @@ class HelmApp(App):
                     log.debug("session %s: %s -> %s", s.name, s.state.value, new_state.value)
                     s = dataclasses.replace(s, state=new_state, last_activity=last_activity)
                 new_sessions.append(s)
-            self._sessions = new_sessions
+            except Exception:
+                log.error("error refreshing session %s:\n%s", s.name, traceback.format_exc())
+                new_sessions.append(s)  # keep it even if refresh failed
+        self._sessions = new_sessions
+        try:
             self._update_list()
         except Exception:
-            log.error("error refreshing states:\n%s", traceback.format_exc())
+            log.error("error updating list:\n%s", traceback.format_exc())
 
     def _update_list(self) -> None:
         sl = self.query_one("#session-list", SessionList)
