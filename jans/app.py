@@ -110,6 +110,7 @@ class LoadSessionScreen(ModalScreen):
         with Vertical():
             yield Label("[bold]Load directory[/bold]")
             yield Input(str(Path.home()), id="path-input", placeholder="Directory path")
+            yield Input("", id="name-input", placeholder="Nickname (optional, defaults to folder name)")
             yield DirectoryTree(Path.home(), id="tree")
             with Horizontal(id="buttons"):
                 yield Button("Cancel", variant="default", id="cancel")
@@ -121,6 +122,9 @@ class LoadSessionScreen(ModalScreen):
     @on(DirectoryTree.DirectorySelected)
     def dir_selected(self, event: DirectoryTree.DirectorySelected) -> None:
         self.query_one("#path-input", Input).value = str(event.path)
+        name_input = self.query_one("#name-input", Input)
+        if not name_input.value:
+            name_input.value = event.path.name
 
     @on(Input.Changed, "#path-input")
     def path_changed(self, event: Input.Changed) -> None:
@@ -138,12 +142,56 @@ class LoadSessionScreen(ModalScreen):
     @on(Button.Pressed, "#load")
     def load(self) -> None:
         path = self.query_one("#path-input", Input).value.strip()
+        name = self.query_one("#name-input", Input).value.strip()
         if Path(path).is_dir():
-            self.dismiss(path)
+            self.dismiss((path, name or Path(path).name))
 
-    @on(Input.Submitted, "#path-input")
+    @on(Input.Submitted)
     def submitted(self) -> None:
         self.query_one("#load", Button).press()
+
+
+class RenameScreen(ModalScreen):
+    DEFAULT_CSS = """
+    RenameScreen { align: center middle; }
+    RenameScreen > Vertical {
+        width: 50; height: auto;
+        background: $surface; border: solid $accent; padding: 1 2;
+    }
+    RenameScreen #buttons { height: 3; align: right middle; }
+    """
+
+    def __init__(self, current_name: str, **kwargs):
+        super().__init__(**kwargs)
+        self._current_name = current_name
+
+    def compose(self) -> ComposeResult:
+        from textual.containers import Vertical
+        with Vertical():
+            yield Label("[bold]Rename session[/bold]")
+            yield Input(self._current_name, id="name-input")
+            with Horizontal(id="buttons"):
+                yield Button("Cancel", variant="default", id="cancel")
+                yield Button("Rename", variant="primary", id="rename")
+
+    def on_mount(self) -> None:
+        inp = self.query_one("#name-input", Input)
+        inp.focus()
+        inp.cursor_position = len(self._current_name)
+
+    @on(Button.Pressed, "#cancel")
+    def cancel(self) -> None:
+        self.dismiss(None)
+
+    @on(Button.Pressed, "#rename")
+    def rename(self) -> None:
+        name = self.query_one("#name-input", Input).value.strip()
+        if name:
+            self.dismiss(name)
+
+    @on(Input.Submitted)
+    def submitted(self) -> None:
+        self.query_one("#rename", Button).press()
 
 
 class HelpScreen(ModalScreen):
@@ -182,6 +230,7 @@ class HelpScreen(ModalScreen):
         table.add_row("F3", "New task session")
         table.add_row("F4", "Load existing directory")
         table.add_row("F7", "Delete hovered session")
+        table.add_row("F8", "Rename hovered session")
         section("Panel resize")
         table.add_row("F5", "Narrow left panel")
         table.add_row("F6", "Widen left panel")
@@ -285,6 +334,7 @@ class HelmApp(App):
         Binding("f5", "panel_narrow", "F5 ←", show=False),
         Binding("f6", "panel_widen", "F6 →", show=False),
         Binding("f7", "delete_hovered", "F7 Delete", show=False),
+        Binding("f8", "rename_hovered", "F8 Rename", show=False),
         Binding("ctrl+q", "quit_app", "Quit", show=True),
     ]
 
@@ -462,15 +512,16 @@ class HelmApp(App):
         self._show_new_session_dialog("task")
 
     def action_load_dir(self) -> None:
-        def handle_result(path: str | None) -> None:
-            if path:
-                self._load_session(path)
+        def handle_result(result) -> None:
+            if result:
+                path, name = result
+                self._load_session(path, name)
         self.push_screen(LoadSessionScreen(), handle_result)
 
-    def _load_session(self, cwd: str) -> None:
+    def _load_session(self, cwd: str, name: str | None = None) -> None:
         log.info("loading session from %s", cwd)
         session_id = str(uuid.uuid4())
-        name = Path(cwd).name or "loaded"
+        name = name or Path(cwd).name or "loaded"
         tid = f"term-{session_id[:8]}"
 
         session = Session(
@@ -514,6 +565,22 @@ class HelmApp(App):
             if self._active_terminal_id == session.terminal_id:
                 self.action_go_home()
             self._update_list()
+
+    def action_rename_hovered(self) -> None:
+        sl = self.query_one("#session-list", SessionList)
+        session = sl._hovered_session()
+        if session is None:
+            return
+
+        def handle_result(new_name: str | None) -> None:
+            if new_name:
+                self._sessions = [
+                    dataclasses.replace(s, name=new_name) if s.session_id == session.session_id else s
+                    for s in self._sessions
+                ]
+                self._update_list()
+
+        self.push_screen(RenameScreen(session.name), handle_result)
 
     def action_panel_narrow(self) -> None:
         sl = self.query_one("#session-list")
