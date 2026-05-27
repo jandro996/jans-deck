@@ -11,6 +11,7 @@ from textual.screen import ModalScreen
 from textual.widget import Widget
 from textual.widgets import Button, ContentSwitcher, DirectoryTree, Input, Label, ListItem, ListView
 
+from jans.core.commands import read_pending_command, write_result
 from jans.core.log import log
 from jans.core.persistence import load_saved_sessions, save_sessions
 from jans.core.state_detector import detect_state, find_real_session_id
@@ -291,6 +292,16 @@ class ResizableDivider(Widget, can_focus=False):
         event.stop()
 
 
+_ORCHESTRATOR_MD = Path(__file__).parent.parent / "ORCHESTRATOR.md"
+
+
+def _orchestrator_cmd() -> list[str]:
+    cmd = ["claude"]
+    if _ORCHESTRATOR_MD.exists():
+        cmd += ["--append-system-prompt", _ORCHESTRATOR_MD.read_text()]
+    return cmd
+
+
 class HelmApp(App):
     CSS = """
     Screen {
@@ -349,7 +360,7 @@ class HelmApp(App):
         yield ResizableDivider(id="divider")
         with Horizontal(id="right-panel"):
             with ContentSwitcher(initial=ORCHESTRATOR_ID, id="switcher"):
-                yield TerminalWidget(["claude"], id=ORCHESTRATOR_ID)
+                yield TerminalWidget(_orchestrator_cmd(), id=ORCHESTRATOR_ID)
         yield Label(self._status_text(), id="status-bar")
 
     def on_mount(self) -> None:
@@ -359,9 +370,86 @@ class HelmApp(App):
             self._update_list()
             self.set_interval(3.0, self._refresh_states)
             self.query_one(f"#{ORCHESTRATOR_ID}", TerminalWidget).focus()
+            self.set_interval(0.5, self._check_commands)
             log.info("app mounted successfully")
         except Exception:
             log.error("error in on_mount:\n%s", traceback.format_exc())
+
+    def _check_commands(self) -> None:
+        cmd = read_pending_command()
+        if cmd is None:
+            return
+        action = cmd.get("action", "")
+        log.info("executing command: %s", action)
+        try:
+            result = self._execute_command(action, cmd)
+        except Exception:
+            result = {"error": traceback.format_exc()}
+        write_result(result)
+
+    def _execute_command(self, action: str, cmd: dict) -> dict:
+        if action == "list":
+            return {"sessions": [
+                {"name": s.name, "state": s.state.value, "cwd": s.cwd}
+                for s in self._sessions
+            ]}
+        elif action == "new-research":
+            name = cmd.get("name", "research")
+            self._create_session("research", name)
+            return {"ok": True, "name": name}
+        elif action == "new-task":
+            name = cmd.get("name", "task")
+            self._create_session("task", name)
+            return {"ok": True, "name": name}
+        elif action == "load":
+            path = cmd.get("path")
+            name = cmd.get("name")
+            if not path:
+                return {"error": "path required"}
+            self._load_session(path, name)
+            return {"ok": True, "name": name or Path(path).name}
+        elif action == "rename":
+            current = cmd.get("current")
+            new = cmd.get("new")
+            session = next((s for s in self._sessions if s.name == current), None)
+            if not session:
+                return {"error": f"session '{current}' not found"}
+            self._sessions = [
+                dataclasses.replace(s, name=new) if s.name == current else s
+                for s in self._sessions
+            ]
+            self._update_list()
+            return {"ok": True}
+        elif action == "delete":
+            name = cmd.get("name")
+            session = next((s for s in self._sessions if s.name == name), None)
+            if not session:
+                return {"error": f"session '{name}' not found"}
+            if session.terminal_id:
+                try:
+                    w = self.query_one(f"#{session.terminal_id}", TerminalWidget)
+                    w.cleanup(); w.remove()
+                except Exception:
+                    pass
+            self._sessions = [s for s in self._sessions if s.name != name]
+            if self._active_terminal_id == session.terminal_id:
+                self.action_go_home()
+            self._update_list()
+            return {"ok": True}
+        elif action == "home":
+            self.action_go_home()
+            return {"ok": True}
+        elif action == "switch":
+            name = cmd.get("name")
+            session = next((s for s in self._sessions if s.name == name), None)
+            if not session:
+                return {"error": f"session '{name}' not found"}
+            if session.state == SessionState.PAUSED:
+                self._resume_session(session)
+            else:
+                self._switch_to(session)
+            return {"ok": True}
+        return {"error": f"unknown action: {action}"}
 
     def _refresh_states(self) -> None:
         new_sessions = []
