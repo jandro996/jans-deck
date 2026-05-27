@@ -377,19 +377,27 @@ class HelmApp(App):
         log.info("resuming session %s (id=%s)", session.name, session.session_id)
         try:
             tid = f"term-{session.session_id[:8]}"
-            session.terminal_id = tid
-            session.state = SessionState.PROCESSING
+            session = dataclasses.replace(session, terminal_id=tid, state=SessionState.PROCESSING)
 
-            widget = TerminalWidget(
-                ["claude", "--resume", session.session_id],
-                cwd=session.cwd,
-                id=tid,
-            )
+            # --continue resumes the most recent conversation in the cwd.
+            # We don't use --resume <id> because jans-created sessions have
+            # synthetic UUIDs, not real Claude session IDs.
+            cmd = ["claude", "--continue"]
+
+            widget = TerminalWidget(cmd, cwd=session.cwd, id=tid)
             switcher = self.query_one("#switcher", ContentSwitcher)
             switcher.mount(widget)
             switcher.current = tid
             self._active_terminal_id = tid
             self.app.call_after_refresh(widget.focus)
+
+            # Update the session in the list with new terminal_id and state
+            self._sessions = [
+                dataclasses.replace(s, terminal_id=tid, state=SessionState.PROCESSING)
+                if s.session_id == session.session_id else s
+                for s in self._sessions
+            ]
+            self._update_list()
         except Exception:
             log.error("error resuming session %s:\n%s", session.name, traceback.format_exc())
 
