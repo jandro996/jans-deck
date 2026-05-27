@@ -1,0 +1,84 @@
+import json
+import os
+from datetime import datetime
+from pathlib import Path
+
+from jans.models import Session, SessionState
+
+CLAUDE_SESSIONS = Path.home() / ".claude" / "sessions"
+CLAUDE_PROJECTS = Path.home() / ".claude" / "projects"
+PROCESSING_THRESHOLD_SECS = 15
+
+
+def _is_pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return True
+    except (ProcessLookupError, PermissionError):
+        return False
+
+
+def _find_jsonl(session_id: str, cwd: str) -> Path | None:
+    project_key = cwd.replace("/", "-").replace(".", "-")
+    path = CLAUDE_PROJECTS / project_key / f"{session_id}.jsonl"
+    return path if path.exists() else None
+
+
+def _last_message_type(jsonl: Path) -> str | None:
+    last = None
+    try:
+        with open(jsonl) as f:
+            for line in f:
+                try:
+                    msg = json.loads(line)
+                    if msg.get("type") in ("user", "assistant"):
+                        last = msg["type"]
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    return last
+
+
+def detect_state(session: Session) -> tuple[SessionState, datetime]:
+    if session.pid and not _is_pid_alive(session.pid):
+        return SessionState.TERMINATED, session.last_activity
+
+    jsonl = _find_jsonl(session.session_id, session.cwd)
+    if not jsonl:
+        return SessionState.PROCESSING, session.last_activity
+
+    mtime = datetime.fromtimestamp(jsonl.stat().st_mtime)
+    age = (datetime.now() - mtime).total_seconds()
+
+    if age < PROCESSING_THRESHOLD_SECS:
+        return SessionState.PROCESSING, mtime
+
+    last_type = _last_message_type(jsonl)
+    if last_type == "assistant":
+        return SessionState.WAITING, mtime
+
+    return SessionState.PROCESSING, mtime
+
+
+def load_active_claude_sessions() -> list[Session]:
+    sessions = []
+    if not CLAUDE_SESSIONS.exists():
+        return sessions
+
+    for f in CLAUDE_SESSIONS.glob("*.json"):
+        try:
+            data = json.loads(f.read_text())
+            pid = data.get("pid")
+            if pid and not _is_pid_alive(pid):
+                continue
+            sessions.append(Session(
+                name=Path(data.get("cwd", "")).name or "unknown",
+                cwd=data.get("cwd", ""),
+                session_id=data.get("sessionId", ""),
+                pid=pid,
+            ))
+        except Exception:
+            pass
+
+    return sessions

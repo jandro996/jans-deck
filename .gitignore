@@ -1,0 +1,21 @@
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+.env
+
+# Textual dev
+.textual/
+
+# IDE
+.idea/
+.vscode/
+
+# macOS
+.DS_Store
