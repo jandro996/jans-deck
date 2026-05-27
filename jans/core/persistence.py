@@ -32,6 +32,9 @@ def load_saved_sessions() -> list[Session]:
         data = json.loads(STATE_FILE.read_text())
         sessions = []
         for d in data:
+            # Skip old external sessions (non-null pid = detected by old code, not created by jans)
+            if d.get("pid") is not None:
+                continue
             sessions.append(Session(
                 name=d["name"],
                 cwd=d["cwd"],
