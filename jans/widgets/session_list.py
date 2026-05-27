@@ -81,7 +81,7 @@ class SessionList(Widget, can_focus=False):
     def on_click(self, event: events.Click) -> None:
         body_y = event.y - 1
         session = _session_at_line(self._sessions, body_y)
-        if session is not None and (session.terminal_id is not None or session.state == SessionState.PAUSED):
+        if session is not None:
             self.post_message(self.SessionClicked(session))
 
 
@@ -97,19 +97,14 @@ def _render_sessions(sessions: list[Session], hover_y: int = -1) -> Text:
         delta = int((datetime.now() - s.last_activity).total_seconds())
         age = f"{delta}s" if delta < 60 else (f"{delta // 60}m" if delta < 3600 else f"{delta // 3600}h")
         short_cwd = s.cwd.replace(str(Path.home()), "~")
-        external = s.terminal_id is None and s.state != SessionState.PAUSED
-        clickable = not external or s.state == SessionState.PAUSED
-        hovered = hover_y in (line, line + 1) and clickable
+        hovered = hover_y in (line, line + 1)
         bg = _HOVER_BG if hovered else None
-        name_style = Style(bold=not external, bgcolor=bg)
         dim_style = Style(dim=True, bgcolor=bg)
         cwd_style = Style(color="#585b70", bgcolor=bg)
 
         text.append(f" {icon} ", style=Style(color=color, bgcolor=bg))
         name = s.name if len(s.name) <= 16 else "…" + s.name[-15:]
-        text.append(name, style=name_style)
-        if external:
-            text.append(" ext", style=dim_style)
+        text.append(name, style=Style(bold=True, bgcolor=bg))
         text.append(f" {age.rjust(4)}\n", style=dim_style)
         text.append(f"   {short_cwd}\n", style=cwd_style)
         line += 2
