@@ -139,9 +139,8 @@ class TerminalWidget(Widget, can_focus=True):
         return _run([
             "tmux", "capture-pane",
             "-t", f"{self._session}:0",
-            "-p",        # print to stdout
-            "-e",        # include ANSI escape codes
-            "-S", "-500" # include up to 500 lines of history
+            "-p",  # print to stdout
+            "-e",  # include ANSI escape codes
         ])
 
     def _sync_size(self) -> None:
