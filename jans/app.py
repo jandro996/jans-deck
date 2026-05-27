@@ -292,14 +292,11 @@ class ResizableDivider(Widget, can_focus=False):
         event.stop()
 
 
-_ORCHESTRATOR_MD = Path(__file__).parent.parent / "ORCHESTRATOR.md"
+_JANS_DIR = Path(__file__).parent.parent  # ~/research/jans/
 
 
 def _orchestrator_cmd() -> list[str]:
-    cmd = ["claude"]
-    if _ORCHESTRATOR_MD.exists():
-        cmd += ["--append-system-prompt", _ORCHESTRATOR_MD.read_text()]
-    return cmd
+    return ["claude"]
 
 
 class HelmApp(App):
@@ -360,7 +357,7 @@ class HelmApp(App):
         yield ResizableDivider(id="divider")
         with Horizontal(id="right-panel"):
             with ContentSwitcher(initial=ORCHESTRATOR_ID, id="switcher"):
-                yield TerminalWidget(_orchestrator_cmd(), id=ORCHESTRATOR_ID)
+                yield TerminalWidget(_orchestrator_cmd(), cwd=str(_JANS_DIR), id=ORCHESTRATOR_ID)
         yield Label(self._status_text(), id="status-bar")
 
     def on_mount(self) -> None:
