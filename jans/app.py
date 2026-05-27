@@ -374,7 +374,7 @@ class HelmApp(App):
         log.info("resuming session %s (id=%s)", session.name, session.session_id)
         try:
             tid = f"term-{session.session_id[:8]}"
-            session = dataclasses.replace(session, terminal_id=tid, state=SessionState.PROCESSING)
+            session = dataclasses.replace(session, terminal_id=tid, state=SessionState.PROCESSING, pid=None)
 
             # --continue resumes the most recent conversation in the cwd.
             # We don't use --resume <id> because jans-created sessions have
