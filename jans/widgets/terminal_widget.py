@@ -44,8 +44,8 @@ _KEY_MAP: dict[str, str] = {
 _TMUX_BASE = "jans"
 
 
-def _run(args: list[str]) -> str:
-    result = subprocess.run(args, capture_output=True, text=True)
+def _run(args: list[str], input_text: str | None = None) -> str:
+    result = subprocess.run(args, capture_output=True, text=True, input=input_text)
     return result.stdout
 
 
@@ -138,6 +138,18 @@ class TerminalWidget(Widget, can_focus=True):
 
     def on_resize(self, event) -> None:
         self._resize(event.size.width, event.size.height)
+
+    def on_paste(self, event) -> None:
+        """Handle paste events - covers Wispr Flow clipboard injection and Cmd+V."""
+        if not self._session:
+            return
+        text = getattr(event, "text", "") or ""
+        if text:
+            log.debug("paste: %d chars -> tmux", len(text))
+            _run(["tmux", "load-buffer", "-", "-"],
+                 input_text=text)
+            _run(["tmux", "paste-buffer", "-t", f"{self._session}:0"])
+            event.stop()
 
     def on_key(self, event) -> None:
         if not self._session:
