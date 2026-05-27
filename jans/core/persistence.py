@@ -10,17 +10,17 @@ STATE_FILE = JANS_DIR / "state.json"
 
 def save_sessions(sessions: list[Session]) -> None:
     JANS_DIR.mkdir(exist_ok=True)
+    # Only save jans-created sessions (pid=None means created via F2/F3/F4,
+    # not detected from external ~/.claude/sessions/)
     data = [
         {
             "name": s.name,
             "cwd": s.cwd,
             "session_id": s.session_id,
-            "state": s.state.value,
             "last_activity": s.last_activity.isoformat(),
-            "pid": s.pid,
         }
         for s in sessions
-        if s.state != SessionState.TERMINATED
+        if s.state != SessionState.TERMINATED and s.pid is None
     ]
     STATE_FILE.write_text(json.dumps(data, indent=2))
 
@@ -38,7 +38,6 @@ def load_saved_sessions() -> list[Session]:
                 session_id=d["session_id"],
                 state=SessionState.PAUSED,
                 last_activity=datetime.fromisoformat(d["last_activity"]),
-                pid=d.get("pid"),
             ))
         return sessions
     except Exception:
