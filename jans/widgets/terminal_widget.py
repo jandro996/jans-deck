@@ -87,11 +87,24 @@ class TerminalWidget(Widget, can_focus=True):
         except Exception:
             log.error("failed to mount terminal:\n%s", traceback.format_exc())
 
+    def _session_exists(self, name: str) -> bool:
+        result = subprocess.run(
+            ["tmux", "has-session", "-t", name],
+            capture_output=True
+        )
+        return result.returncode == 0
+
     def _start(self) -> None:
         w = max(self.size.width, 80)
         h = max(self.size.height, 24)
         name = f"{_TMUX_BASE}-{self.id}"
         self._session = name
+
+        if self._session_exists(name):
+            # Reconnect to existing session - process kept running while jans was closed
+            log.info("reconnecting to existing tmux session %s", name)
+            self._resize(w, h)
+            return
 
         _run(["tmux", "new-session", "-d", "-s", name, "-x", str(w), "-y", str(h)])
         log.info("tmux session %s created (%dx%d)", name, w, h)
@@ -190,10 +203,13 @@ class TerminalWidget(Widget, can_focus=True):
             self._send_text(text)
         self._flush_task = None
 
-    def cleanup(self) -> None:
+    def cleanup(self, kill: bool = False) -> None:
         if self._poll_task:
             self._poll_task.cancel()
         if self._session:
-            _run(["tmux", "kill-session", "-t", self._session])
-            log.info("killed tmux session %s", self._session)
+            if kill:
+                _run(["tmux", "kill-session", "-t", self._session])
+                log.info("killed tmux session %s", self._session)
+            else:
+                log.info("detached from tmux session %s (still running)", self._session)
             self._session = None

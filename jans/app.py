@@ -640,7 +640,7 @@ class HelmApp(App):
             if session.terminal_id:
                 try:
                     widget = self.query_one(f"#{session.terminal_id}", TerminalWidget)
-                    widget.cleanup()
+                    widget.cleanup(kill=True)  # F7 = explicit delete, kill the process
                     widget.remove()
                 except Exception:
                     pass
@@ -676,7 +676,7 @@ class HelmApp(App):
     def action_quit_app(self) -> None:
         save_sessions(self._sessions)
         for widget in self.query(TerminalWidget):
-            widget.cleanup()
+            widget.cleanup(kill=False)  # keep processes running
         self.exit()
 
     def on_unmount(self) -> None:
