@@ -146,6 +146,52 @@ class LoadSessionScreen(ModalScreen):
         self.query_one("#load", Button).press()
 
 
+class HelpScreen(ModalScreen):
+    DEFAULT_CSS = """
+    HelpScreen { align: center middle; }
+    HelpScreen > Vertical {
+        width: 60;
+        height: auto;
+        max-height: 80%;
+        background: $surface;
+        border: solid $accent;
+        padding: 1 2;
+    }
+    HelpScreen .section { color: $accent; text-style: bold; margin-top: 1; }
+    HelpScreen .key { color: $warning; }
+    HelpScreen .desc { color: $text; }
+    """
+
+    BINDINGS = [Binding("escape", "dismiss", show=False),
+                Binding("f1", "dismiss", show=False)]
+
+    def compose(self) -> ComposeResult:
+        from textual.containers import Vertical
+        with Vertical():
+            yield Label("[bold]jans - keyboard shortcuts[/bold]\n")
+            yield Label("[accent]Navigation[/accent]", classes="section")
+            yield Label("  [warning]ctrl+h[/warning]       Go to orchestrator (home)")
+            yield Label("  [warning]click[/warning]        Open session in right panel")
+            yield Label("  [warning]F1[/warning]           Show this help")
+            yield Label("")
+            yield Label("[accent]Sessions[/accent]", classes="section")
+            yield Label("  [warning]F2[/warning]           New research session")
+            yield Label("  [warning]F3[/warning]           New task session")
+            yield Label("  [warning]F4[/warning]           Load existing directory")
+            yield Label("")
+            yield Label("[accent]Panel resize[/accent]", classes="section")
+            yield Label("  [warning]ctrl+←[/warning]       Narrow left panel")
+            yield Label("  [warning]ctrl+→[/warning]       Widen left panel")
+            yield Label("")
+            yield Label("[accent]App[/accent]", classes="section")
+            yield Label("  [warning]ctrl+q[/warning]       Save and quit")
+            yield Label("")
+            yield Label("[dim]Press Escape or F1 to close[/dim]")
+
+    def action_dismiss(self) -> None:
+        self.dismiss()
+
+
 class ResizableDivider(Widget, can_focus=False):
     DEFAULT_CSS = """
     ResizableDivider {
@@ -226,10 +272,13 @@ class HelmApp(App):
     """
 
     BINDINGS = [
+        Binding("f1", "show_help", "F1 Help", show=True),
         Binding("ctrl+h", "go_home", "Home", show=True),
         Binding("f2", "new_research", "F2 Research", show=True),
         Binding("f3", "new_task", "F3 Task", show=True),
         Binding("f4", "load_dir", "F4 Load", show=True),
+        Binding("ctrl+left", "panel_narrow", "Panel ←", show=False),
+        Binding("ctrl+right", "panel_widen", "Panel →", show=False),
         Binding("ctrl+q", "quit_app", "Quit", show=True),
     ]
 
@@ -298,7 +347,7 @@ class HelmApp(App):
         if processing:
             parts.append(f"[yellow]▶[/yellow] {processing} processing")
         summary = "  ".join(parts) if parts else "[dim]no active sessions[/dim]"
-        return f"  {summary}   [dim]ctrl+h home  F2 research  F3 task  F4 load  ctrl+q quit[/dim]"
+        return f"  {summary}   [dim]F1 help  ctrl+h home  F2 research  F3 task  F4 load  ctrl+q quit[/dim]"
 
     @on(SessionList.SessionClicked)
     def session_clicked(self, event: SessionList.SessionClicked) -> None:
@@ -414,6 +463,17 @@ class HelmApp(App):
                 self._create_session(mode_str, name)
 
         self.push_screen(NewSessionScreen(mode), handle_result)
+
+    def action_show_help(self) -> None:
+        self.push_screen(HelpScreen())
+
+    def action_panel_narrow(self) -> None:
+        sl = self.query_one("#session-list")
+        sl.styles.width = max(20, sl.size.width - 2)
+
+    def action_panel_widen(self) -> None:
+        sl = self.query_one("#session-list")
+        sl.styles.width = min(80, sl.size.width + 2)
 
     def action_quit_app(self) -> None:
         save_sessions(self._sessions)
