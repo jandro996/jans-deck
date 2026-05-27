@@ -151,34 +151,43 @@ class ResizableDivider(Widget, can_focus=False):
     ResizableDivider {
         width: 3;
         height: 100%;
-        background: $surface;
-        align: center middle;
-    }
-    ResizableDivider:hover {
-        background: $accent;
-    }
-    ResizableDivider Label {
-        background: transparent;
-        color: $text-muted;
-        width: 3;
-        text-align: center;
-    }
-    ResizableDivider:hover Label {
-        color: $background;
     }
     """
 
-    def compose(self) -> ComposeResult:
-        yield Label("⋮")
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._hovered = False
+
+    def on_enter(self, _: events.Enter) -> None:
+        self._hovered = True
+        self.refresh()
+
+    def on_leave(self, _: events.Leave) -> None:
+        self._hovered = False
+        self.refresh()
+
+    def render_line(self, y: int):
+        from textual.strip import Strip
+        from rich.segment import Segment
+        from rich.style import Style
+        if self._hovered:
+            style = Style(color="#1e1e2e", bgcolor="#cba6f7")
+            char = " ◀ "
+        else:
+            style = Style(color="#585b70", bgcolor="#313244")
+            char = " ⋮ "
+        return Strip([Segment(char, style)], 3)
 
     def on_mouse_scroll_up(self, event: events.MouseScrollUp) -> None:
         sl = self.app.query_one("#session-list")
-        sl.styles.width = max(20, int(sl.styles.width.value) - 2)
+        sl.styles.width = max(20, sl.size.width - 2)
+        log.debug("divider scroll up: new width %d", sl.size.width - 2)
         event.stop()
 
     def on_mouse_scroll_down(self, event: events.MouseScrollDown) -> None:
         sl = self.app.query_one("#session-list")
-        sl.styles.width = min(80, int(sl.styles.width.value) + 2)
+        sl.styles.width = min(80, sl.size.width + 2)
+        log.debug("divider scroll down: new width %d", sl.size.width + 2)
         event.stop()
 
 
