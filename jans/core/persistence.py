@@ -9,9 +9,8 @@ STATE_FILE = JANS_DIR / "state.json"
 
 
 def save_sessions(sessions: list[Session]) -> None:
+    from jans.core.log import log
     JANS_DIR.mkdir(exist_ok=True)
-    # Only save jans-created sessions (pid=None means created via F2/F3/F4,
-    # not detected from external ~/.claude/sessions/)
     data = [
         {
             "name": s.name,
@@ -23,17 +22,21 @@ def save_sessions(sessions: list[Session]) -> None:
         if s.state != SessionState.TERMINATED and s.pid is None
     ]
     STATE_FILE.write_text(json.dumps(data, indent=2))
+    log.info("saved %d sessions to state.json (total in memory: %d, skipped terminated/external: %d)",
+             len(data), len(sessions), len(sessions) - len(data))
 
 
 def load_saved_sessions() -> list[Session]:
+    from jans.core.log import log
     if not STATE_FILE.exists():
+        log.info("state.json not found, starting fresh")
         return []
     try:
         data = json.loads(STATE_FILE.read_text())
         sessions = []
         for d in data:
-            # Skip old external sessions (non-null pid = detected by old code, not created by jans)
             if d.get("pid") is not None:
+                log.debug("skipping external session %s (has pid)", d.get("name"))
                 continue
             sessions.append(Session(
                 name=d["name"],
@@ -42,6 +45,8 @@ def load_saved_sessions() -> list[Session]:
                 state=SessionState.PAUSED,
                 last_activity=datetime.fromisoformat(d["last_activity"]),
             ))
+        log.info("loaded %d sessions from state.json", len(sessions))
         return sessions
-    except Exception:
+    except Exception as e:
+        log.error("failed to load state.json: %s", e)
         return []
