@@ -73,6 +73,8 @@ class TerminalWidget(Widget, can_focus=True):
         self.cwd = cwd
         self._session: str | None = None
         self._poll_task: asyncio.Task | None = None
+        self._char_buffer: list[str] = []
+        self._flush_task: asyncio.Task | None = None
 
     def compose(self) -> ComposeResult:
         yield Static("", id="screen", markup=False)
@@ -144,16 +146,19 @@ class TerminalWidget(Widget, can_focus=True):
         self._resize(event.size.width, event.size.height)
 
     def on_paste(self, event) -> None:
-        """Handle paste events - covers Wispr Flow clipboard injection and Cmd+V."""
+        """Handle paste / bracketed-paste - covers Wispr Flow clipboard mode and Cmd+V."""
         if not self._session:
             return
         text = getattr(event, "text", "") or ""
         if text:
             log.debug("paste: %d chars -> tmux", len(text))
-            _run(["tmux", "load-buffer", "-", "-"],
-                 input_text=text)
-            _run(["tmux", "paste-buffer", "-t", f"{self._session}:0"])
+            self._send_text(text)
             event.stop()
+
+    def _send_text(self, text: str) -> None:
+        """Send arbitrary text to tmux in one shot."""
+        _run(["tmux", "load-buffer", "-"], input_text=text)
+        _run(["tmux", "paste-buffer", "-t", f"{self._session}:0", "-d"])
 
     def on_key(self, event) -> None:
         if not self._session:
@@ -161,13 +166,29 @@ class TerminalWidget(Widget, can_focus=True):
 
         tmux_key = _KEY_MAP.get(event.key)
         if tmux_key:
+            # Special key - flush any buffered chars first
+            self._flush_char_buffer()
             _run(["tmux", "send-keys", "-t", f"{self._session}:0", tmux_key])
         elif event.character and len(event.character) == 1:
-            _run(["tmux", "send-keys", "-t", f"{self._session}:0",
-                  "-l", event.character])
+            # Buffer regular characters and flush in bulk after 30ms silence
+            # This prevents losing chars when input arrives faster than subprocess latency
+            self._char_buffer.append(event.character)
+            if self._flush_task:
+                self._flush_task.cancel()
+            self._flush_task = asyncio.get_event_loop().call_later(
+                0.03, self._flush_char_buffer
+            )
         else:
             return
         event.stop()
+
+    def _flush_char_buffer(self) -> None:
+        if self._char_buffer and self._session:
+            text = "".join(self._char_buffer)
+            self._char_buffer = []
+            log.debug("flush %d chars -> tmux", len(text))
+            self._send_text(text)
+        self._flush_task = None
 
     def cleanup(self) -> None:
         if self._poll_task:
