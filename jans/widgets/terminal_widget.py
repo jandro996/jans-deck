@@ -56,15 +56,14 @@ class TerminalWidget(Widget, can_focus=True):
         width: 100%;
         padding: 0;
         border: none;
-        overflow: hidden hidden;
+        overflow-y: auto;
+        overflow-x: hidden;
     }
     TerminalWidget Static {
-        height: 100%;
         width: 100%;
         padding: 0;
         border: none;
-        overflow: hidden hidden;
-        scrollbar-size: 0 0;
+        height: auto;
     }
     """
 
@@ -114,16 +113,21 @@ class TerminalWidget(Widget, can_focus=True):
                     prev = content
                     text = Text.from_ansi(content)
                     static.update(text)
+                    # Auto-scroll to bottom only if user hasn't scrolled up
+                    if self.scroll_y >= self.max_scroll_y - 3:
+                        self.scroll_end(animate=False)
             except Exception:
                 log.error("poll error:\n%s", traceback.format_exc())
             await asyncio.sleep(0.05)
 
     def _capture(self) -> str:
+        # Capture last 500 lines of scrollback history, not just visible area
         return _run([
             "tmux", "capture-pane",
             "-t", f"{self._session}:0",
-            "-p",   # print to stdout
-            "-e",   # include ANSI escape codes
+            "-p",        # print to stdout
+            "-e",        # include ANSI escape codes
+            "-S", "-500" # include up to 500 lines of history
         ])
 
     def _sync_size(self) -> None:
