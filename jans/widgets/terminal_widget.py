@@ -109,6 +109,7 @@ class TerminalWidget(Widget, can_focus=True):
             return
 
         _run(["tmux", "new-session", "-d", "-s", name, "-x", str(w), "-y", str(h)])
+        _run(["tmux", "set-option", "-t", name, "history-limit", "10000"])
         log.info("tmux session %s created (%dx%d)", name, w, h)
 
         if self.cwd:
@@ -143,7 +144,7 @@ class TerminalWidget(Widget, can_focus=True):
             "-t", f"{self._session}:0",
             "-p",        # print to stdout
             "-e",        # include ANSI escape codes
-            "-S", "-500" # 500 lines of scrollback history
+            "-S", "-5000" # 5000 lines of scrollback history
         ])
 
     def _sync_size(self) -> None:
