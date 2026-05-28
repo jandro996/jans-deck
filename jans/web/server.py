@@ -238,6 +238,15 @@ def main():
     signal.signal(signal.SIGTERM, _save)
     signal.signal(signal.SIGINT, _save)
 
+    import threading
+    import webbrowser
     print("\033]0;jans\007", end="", flush=True)
-    log.info("starting jans web server")
+    log.info("starting jans web server on http://localhost:7777")
+    print("jans web  →  http://localhost:7777")
+    # Open browser after a short delay so server is ready
+    threading.Timer(1.0, lambda: webbrowser.open("http://localhost:7777")).start()
     uvicorn.run(app, host="127.0.0.1", port=7777, log_level="warning")
+
+
+if __name__ == "__main__":
+    main()
