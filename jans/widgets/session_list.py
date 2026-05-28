@@ -12,6 +12,10 @@ from textual.widgets import Label, Static
 from jans.models import SESSION_ICON, Session, SessionState
 
 _HOVER_BG = "#313244"
+_STATE_BG = {
+    SessionState.WAITING:    "#1a2d1a",  # subtle green tint
+    SessionState.PROCESSING: "#2d2a1a",  # subtle yellow tint
+}
 
 
 class _OrchestratorHeader(Widget, can_focus=False):
@@ -147,7 +151,7 @@ def _render_sessions(sessions: list[Session], hover_y: int = -1) -> Text:
         age = f"{delta}s" if delta < 60 else (f"{delta // 60}m" if delta < 3600 else f"{delta // 3600}h")
         short_cwd = s.cwd.replace(str(Path.home()), "~")
         hovered = hover_y in (line, line + 1, line + 2)
-        bg = _HOVER_BG if hovered else None
+        bg = _HOVER_BG if hovered else _STATE_BG.get(s.state)
         dim_style = Style(dim=True, bgcolor=bg)
         cwd_style = Style(color="#585b70", bgcolor=bg)
 
@@ -156,7 +160,7 @@ def _render_sessions(sessions: list[Session], hover_y: int = -1) -> Text:
         text.append(name, style=Style(bold=True, bgcolor=bg))
         text.append(f" {age.rjust(4)}\n", style=dim_style)
         text.append(f"   {short_cwd}\n", style=cwd_style)
-        text.append("\n")  # separator line - larger click target
+        text.append("\n", style=Style(bgcolor=bg))
         line += 3
 
     if paused:

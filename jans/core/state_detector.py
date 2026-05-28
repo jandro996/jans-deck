@@ -7,7 +7,7 @@ from jans.models import Session, SessionState
 
 CLAUDE_SESSIONS = Path.home() / ".claude" / "sessions"
 CLAUDE_PROJECTS = Path.home() / ".claude" / "projects"
-PROCESSING_THRESHOLD_SECS = 15
+PROCESSING_THRESHOLD_SECS = 8
 
 
 def _is_pid_alive(pid: int) -> bool:
