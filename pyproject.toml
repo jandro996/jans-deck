@@ -11,8 +11,12 @@ dependencies = [
     "pyte>=0.8.0",
     "ptyprocess>=0.7.0",
     "watchfiles>=0.21.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "websockets>=12.0",
 ]
 
 [project.scripts]
 jans = "jans.__main__:main"
 jans-ctl = "jans.ctl:main"
+jans-web = "jans.web.server:main"

@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>jans</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    background: #1e1e2e;
+    color: #cdd6f4;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Header ── */
+  header {
+    background: #e07a3e;
+    color: white;
+    padding: 10px 16px;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    user-select: none;
+    flex-shrink: 0;
+  }
+  header:hover { background: #c96b2f; }
+
+  /* ── Status bar ── */
+  #status-bar {
+    background: #313244;
+    padding: 4px 16px;
+    font-size: 12px;
+    color: #a6adc8;
+    flex-shrink: 0;
+    display: flex;
+    gap: 16px;
+  }
+  .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
+  .dot-processing { background: #f9e2af; }
+  .dot-waiting    { background: #a6e3a1; }
+  .dot-needs-input{ background: #f38ba8; }
+
+  /* ── Session list ── */
+  #sessions {
+    padding: 8px 0;
+    overflow-y: auto;
+    flex-shrink: 0;
+  }
+
+  .session {
+    padding: 8px 16px;
+    cursor: pointer;
+    border-left: 3px solid transparent;
+    transition: background 0.1s;
+  }
+  .session:hover { background: #313244; }
+  .session.active { border-left-color: #cba6f7; background: #2a2a3e; }
+
+  .session-row1 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .session-row2 {
+    font-size: 11px;
+    color: #585b70;
+    margin-top: 2px;
+    padding-left: 20px;
+  }
+  .session-age { margin-left: auto; font-size: 11px; color: #6c7086; font-weight: 400; }
+
+  .icon { font-size: 12px; }
+  .state-processing  .icon { color: #f9e2af; }
+  .state-waiting     .icon { color: #a6e3a1; }
+  .state-needs_input .icon { color: #f38ba8; animation: pulse 1s infinite; }
+  .state-terminated  .icon { color: #f38ba8; opacity: 0.5; }
+  .state-paused      .icon { color: #89b4fa; }
+
+  .state-needs_input { background: #2d1a1a !important; }
+  .state-waiting     { background: #1a2d1a; }
+  .state-processing  { background: #2d2a1a; }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.4; }
+  }
+
+  /* ── Divider ── */
+  .section-label {
+    font-size: 10px;
+    color: #45475a;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    padding: 8px 16px 4px;
+  }
+
+  /* ── Toolbar ── */
+  #toolbar {
+    padding: 8px 16px;
+    display: flex;
+    gap: 8px;
+    border-top: 1px solid #313244;
+    flex-shrink: 0;
+  }
+  button {
+    background: #313244;
+    color: #cdd6f4;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    cursor: pointer;
+    flex: 1;
+    transition: background 0.1s;
+  }
+  button:hover { background: #45475a; }
+  button.primary { background: #cba6f7; color: #1e1e2e; font-weight: 600; }
+  button.primary:hover { background: #b895f0; }
+
+  /* ── Modal ── */
+  #modal-overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.6);
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+  }
+  #modal-overlay.open { display: flex; }
+  #modal {
+    background: #1e1e2e;
+    border: 1px solid #cba6f7;
+    border-radius: 10px;
+    padding: 20px;
+    width: 420px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  #modal h2 { font-size: 15px; font-weight: 700; }
+  #modal input, #modal select {
+    background: #313244;
+    color: #cdd6f4;
+    border: 1px solid #45475a;
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 13px;
+    width: 100%;
+    outline: none;
+  }
+  #modal input:focus, #modal select:focus { border-color: #cba6f7; }
+  #modal label { font-size: 12px; color: #a6adc8; }
+  .modal-buttons { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+  .modal-buttons button { flex: 0 0 auto; padding: 7px 18px; }
+</style>
+</head>
+<body>
+
+<header id="jans-header" title="Go to orchestrator">jans</header>
+
+<div id="status-bar">
+  <span id="status-text">connecting…</span>
+</div>
+
+<div id="sessions"></div>
+
+<div id="toolbar">
+  <button onclick="openModal('research')">＋ Research</button>
+  <button onclick="openModal('task')">＋ Task</button>
+  <button onclick="openModal('load')" class="primary">⤴ Load</button>
+</div>
+
+<!-- Modal -->
+<div id="modal-overlay">
+  <div id="modal">
+    <h2 id="modal-title">New session</h2>
+    <label id="modal-name-label">Name</label>
+    <input id="modal-name" type="text" placeholder="e.g. grpc-timeout-investigation" autocomplete="off">
+    <div id="modal-path-row" style="display:none">
+      <label>Directory path</label>
+      <input id="modal-path" type="text" placeholder="/Users/…/my-project" autocomplete="off">
+    </div>
+    <div class="modal-buttons">
+      <button onclick="closeModal()">Cancel</button>
+      <button class="primary" onclick="submitModal()">Create</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const ICONS = {
+  processing:  '▶',
+  waiting:     '●',
+  needs_input: '⚡',
+  terminated:  '✗',
+  paused:      '◉',
+};
+
+let sessions = [];
+let ws;
+let _modalMode = 'research';
+
+function connect() {
+  ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.onmessage = e => {
+    const msg = JSON.parse(e.data);
+    if (msg.event === 'sessions') {
+      sessions = msg.data;
+      renderSessions();
+    }
+  };
+  ws.onclose = () => setTimeout(connect, 2000);
+}
+
+function age(isoStr) {
+  const s = Math.floor((Date.now() - new Date(isoStr)) / 1000);
+  if (s < 60)   return s + 's';
+  if (s < 3600) return Math.floor(s / 60) + 'm';
+  return Math.floor(s / 3600) + 'h';
+}
+
+function renderSessions() {
+  const paused = sessions.filter(s => s.state === 'paused');
+  const active = sessions.filter(s => s.state !== 'paused');
+
+  let html = '';
+
+  if (paused.length) {
+    html += `<div class="section-label">paused</div>`;
+    paused.forEach(s => { html += sessionHtml(s); });
+  }
+
+  if (active.length) {
+    html += `<div class="section-label">active</div>`;
+    active.forEach(s => { html += sessionHtml(s); });
+  }
+
+  document.getElementById('sessions').innerHTML = html;
+
+  // Status bar
+  const waiting     = sessions.filter(s => s.state === 'waiting').length;
+  const processing  = sessions.filter(s => s.state === 'processing').length;
+  const needsInput  = sessions.filter(s => s.state === 'needs_input').length;
+  const parts = [];
+  if (needsInput)  parts.push(`<span class="status-dot dot-needs-input"></span>${needsInput} needs input`);
+  if (waiting)     parts.push(`<span class="status-dot dot-waiting"></span>${waiting} waiting`);
+  if (processing)  parts.push(`<span class="status-dot dot-processing"></span>${processing} processing`);
+  document.getElementById('status-text').innerHTML =
+    parts.length ? parts.join('&nbsp;&nbsp;') : 'no active sessions';
+}
+
+function sessionHtml(s) {
+  const name = s.name.length > 22 ? '…' + s.name.slice(-21) : s.name;
+  const cwd  = s.cwd.replace(/^\/Users\/[^/]+/, '~');
+  return `
+    <div class="session state-${s.state}" onclick="focusSession('${s.session_id}')" title="${s.cwd}">
+      <div class="session-row1">
+        <span class="icon">${ICONS[s.state] || '?'}</span>
+        <span>${name}</span>
+        <span class="session-age">${age(s.last_activity)}</span>
+      </div>
+      <div class="session-row2">${cwd}</div>
+    </div>`;
+}
+
+async function focusSession(id) {
+  await fetch(`/api/sessions/${id}/focus`, { method: 'POST' });
+}
+
+async function deleteSession(id) {
+  if (!confirm('Remove session from jans?')) return;
+  await fetch(`/api/sessions/${id}`, { method: 'DELETE' });
+}
+
+// Header click → bring orchestrator to front
+document.getElementById('jans-header').onclick = () => {
+  // Focus the jans terminal (orchestrator) in iTerm2
+  fetch('/api/sessions/orchestrator/focus', { method: 'POST' }).catch(() => {});
+};
+
+// Modal
+function openModal(mode) {
+  _modalMode = mode;
+  document.getElementById('modal-title').textContent =
+    mode === 'research' ? 'New research session' :
+    mode === 'task'     ? 'New task session' : 'Load directory';
+  document.getElementById('modal-name-label').textContent =
+    mode === 'load' ? 'Nickname (optional)' : 'Name';
+  document.getElementById('modal-path-row').style.display = mode === 'load' ? '' : 'none';
+  document.getElementById('modal-name').value = '';
+  document.getElementById('modal-path').value = '';
+  document.getElementById('modal-overlay').classList.add('open');
+  setTimeout(() => document.getElementById(mode === 'load' ? 'modal-path' : 'modal-name').focus(), 50);
+}
+
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('open');
+}
+
+async function submitModal() {
+  const name = document.getElementById('modal-name').value.trim();
+  const path = document.getElementById('modal-path').value.trim();
+  if (_modalMode === 'load' && !path) return;
+  if (_modalMode !== 'load' && !name) return;
+
+  const body = _modalMode === 'load'
+    ? { action: 'load', path, name: name || undefined }
+    : { action: _modalMode === 'research' ? 'new-research' : 'new-task', name };
+
+  closeModal();
+  await fetch('/api/sessions', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+}
+
+document.getElementById('modal-overlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('modal-overlay')) closeModal();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeModal();
+  if (e.key === 'Enter' && document.getElementById('modal-overlay').classList.contains('open')) submitModal();
+});
+
+// Auto-refresh ages every 10s
+setInterval(() => { if (sessions.length) renderSessions(); }, 10000);
+
+connect();
+</script>
+</body>
+</html>
