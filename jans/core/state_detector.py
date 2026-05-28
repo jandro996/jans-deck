@@ -79,14 +79,17 @@ def detect_state(session: Session) -> tuple[SessionState, datetime]:
     mtime = datetime.fromtimestamp(jsonl.stat().st_mtime)
     age = (datetime.now() - mtime).total_seconds()
 
+    last_type, has_pending_tool_use = _analyze_last_messages(jsonl)
+
+    # NEEDS_INPUT takes priority over the time threshold -
+    # a pending tool_use is always urgent regardless of when the JSONL was modified.
+    if has_pending_tool_use:
+        return SessionState.NEEDS_INPUT, mtime
+
     if age < PROCESSING_THRESHOLD_SECS:
         return SessionState.PROCESSING, mtime
 
-    last_type, has_pending_tool_use = _analyze_last_messages(jsonl)
-
     if last_type == "assistant":
-        if has_pending_tool_use:
-            return SessionState.NEEDS_INPUT, mtime
         return SessionState.WAITING, mtime
 
     return SessionState.PROCESSING, mtime
