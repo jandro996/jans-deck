@@ -28,20 +28,44 @@ def _find_jsonl(session_id: str, cwd: str) -> Path | None:
     return None
 
 
-def _last_message_type(jsonl: Path) -> str | None:
-    last = None
+def _analyze_last_messages(jsonl: Path) -> tuple[str | None, bool]:
+    """Returns (last_type, has_pending_tool_use).
+    has_pending_tool_use=True means the last assistant message has tool_use
+    with no subsequent tool_result - Claude is waiting for permission.
+    """
+    last_type = None
+    last_assistant_content = None
     try:
         with open(jsonl) as f:
             for line in f:
                 try:
                     msg = json.loads(line)
-                    if msg.get("type") in ("user", "assistant"):
-                        last = msg["type"]
+                    t = msg.get("type")
+                    if t == "assistant":
+                        last_type = "assistant"
+                        content = msg.get("message", {}).get("content", [])
+                        last_assistant_content = content
+                    elif t == "user":
+                        last_type = "user"
+                        # If user sent tool_result, the pending tool_use is resolved
+                        content = msg.get("message", {}).get("content", [])
+                        if isinstance(content, list):
+                            if any(isinstance(b, dict) and b.get("type") == "tool_result"
+                                   for b in content):
+                                last_assistant_content = None
                 except Exception:
                     pass
     except Exception:
         pass
-    return last
+
+    has_pending_tool_use = False
+    if last_type == "assistant" and isinstance(last_assistant_content, list):
+        has_pending_tool_use = any(
+            isinstance(b, dict) and b.get("type") == "tool_use"
+            for b in last_assistant_content
+        )
+
+    return last_type, has_pending_tool_use
 
 
 def detect_state(session: Session) -> tuple[SessionState, datetime]:
@@ -58,8 +82,11 @@ def detect_state(session: Session) -> tuple[SessionState, datetime]:
     if age < PROCESSING_THRESHOLD_SECS:
         return SessionState.PROCESSING, mtime
 
-    last_type = _last_message_type(jsonl)
+    last_type, has_pending_tool_use = _analyze_last_messages(jsonl)
+
     if last_type == "assistant":
+        if has_pending_tool_use:
+            return SessionState.NEEDS_INPUT, mtime
         return SessionState.WAITING, mtime
 
     return SessionState.PROCESSING, mtime

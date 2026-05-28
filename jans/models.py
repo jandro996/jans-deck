@@ -4,17 +4,19 @@ from enum import Enum
 
 
 class SessionState(Enum):
-    PROCESSING = "processing"
-    WAITING = "waiting"
-    TERMINATED = "terminated"
-    PAUSED = "paused"
+    PROCESSING  = "processing"   # Claude is working
+    WAITING     = "waiting"      # Claude finished, waiting for your next message
+    NEEDS_INPUT = "needs_input"  # Claude needs you to approve/answer something NOW
+    TERMINATED  = "terminated"
+    PAUSED      = "paused"
 
 
 SESSION_ICON = {
-    SessionState.PROCESSING: ("▶", "yellow"),
-    SessionState.WAITING:    ("●", "green"),
-    SessionState.TERMINATED: ("✗", "red"),
-    SessionState.PAUSED:     ("◉", "blue"),
+    SessionState.PROCESSING:  ("▶", "yellow"),
+    SessionState.WAITING:     ("●", "green"),
+    SessionState.NEEDS_INPUT: ("⚡", "bright_red"),
+    SessionState.TERMINATED:  ("✗", "red"),
+    SessionState.PAUSED:      ("◉", "blue"),
 }
 
 
@@ -26,4 +28,4 @@ class Session:
     state: SessionState = SessionState.PROCESSING
     last_activity: datetime = field(default_factory=datetime.now)
     pid: int | None = None
-    terminal_id: str | None = None  # None = external session (read-only)
+    terminal_id: str | None = None

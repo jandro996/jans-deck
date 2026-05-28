@@ -13,8 +13,9 @@ from jans.models import SESSION_ICON, Session, SessionState
 
 _HOVER_BG = "#313244"
 _STATE_BG = {
-    SessionState.WAITING:    "#1a2d1a",  # subtle green tint
-    SessionState.PROCESSING: "#2d2a1a",  # subtle yellow tint
+    SessionState.WAITING:     "#1a2d1a",  # subtle green
+    SessionState.PROCESSING:  "#2d2a1a",  # subtle yellow
+    SessionState.NEEDS_INPUT: "#2d1a1a",  # subtle red - needs your attention
 }
 
 
