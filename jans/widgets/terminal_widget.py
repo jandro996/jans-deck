@@ -101,8 +101,10 @@ class TerminalWidget(Widget, can_focus=True):
         self._session = name
 
         if self._session_exists(name):
-            # Reconnect to existing session - process kept running while jans was closed
+            # Reconnect to existing session - process kept running while jans was closed.
+            # Clear scrollback history to avoid accumulating redraw artifacts from resizes.
             log.info("reconnecting to existing tmux session %s", name)
+            _run(["tmux", "clear-history", "-t", f"{name}:0"])
             self._resize(w, h)
             return
 
@@ -139,8 +141,9 @@ class TerminalWidget(Widget, can_focus=True):
         return _run([
             "tmux", "capture-pane",
             "-t", f"{self._session}:0",
-            "-p",  # print to stdout
-            "-e",  # include ANSI escape codes
+            "-p",        # print to stdout
+            "-e",        # include ANSI escape codes
+            "-S", "-500" # 500 lines of scrollback history
         ])
 
     def _sync_size(self) -> None:
