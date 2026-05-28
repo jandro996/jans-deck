@@ -38,7 +38,7 @@ _KEY_MAP: dict[str, str] = {
     "ctrl+u":     "C-u",
     "ctrl+w":     "C-w",
     "ctrl+z":     "C-z",
-    # f1-f6 are reserved for jans bindings
+    # f1-f10 are reserved for jans bindings
 }
 
 _TMUX_BASE = "jans"
@@ -110,6 +110,10 @@ class TerminalWidget(Widget, can_focus=True):
 
         _run(["tmux", "new-session", "-d", "-s", name, "-x", str(w), "-y", str(h)])
         _run(["tmux", "set-option", "-t", name, "history-limit", "10000"])
+        # Copy mode: y copies selection to macOS clipboard
+        _run(["tmux", "set-option", "-t", name, "mode-keys", "vi"])
+        _run(["tmux", "bind-key", "-T", "copy-mode-vi", "y",
+              "send-keys", "-X", "copy-pipe-and-cancel", "pbcopy"])
         log.info("tmux session %s created (%dx%d)", name, w, h)
 
         if self.cwd:
@@ -159,6 +163,18 @@ class TerminalWidget(Widget, can_focus=True):
 
     def on_resize(self, event) -> None:
         self._resize(event.size.width, event.size.height)
+
+    def enter_copy_mode(self) -> None:
+        """F9: enter tmux vi copy mode. Navigate with arrows, v to select, y to copy."""
+        if self._session:
+            _run(["tmux", "copy-mode", "-t", f"{self._session}:0"])
+
+    def paste_from_clipboard(self) -> None:
+        """F10: paste macOS clipboard content into the session."""
+        if self._session:
+            result = subprocess.run(["pbpaste"], capture_output=True, text=True)
+            if result.stdout:
+                self._send_text(result.stdout)
 
     def on_paste(self, event) -> None:
         """Handle paste / bracketed-paste - covers Wispr Flow clipboard mode and Cmd+V."""

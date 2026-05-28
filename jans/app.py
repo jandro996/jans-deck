@@ -232,6 +232,8 @@ class HelpScreen(ModalScreen):
         table.add_row("F4", "Load existing directory")
         table.add_row("F7", "Delete hovered session")
         table.add_row("F8", "Rename hovered session")
+        table.add_row("F9", "Copy mode (v=select, y=copy to clipboard, q=exit)")
+        table.add_row("F10", "Paste from clipboard")
         section("Panel resize")
         table.add_row("F5", "Narrow left panel")
         table.add_row("F6", "Widen left panel")
@@ -339,6 +341,8 @@ class HelmApp(App):
         Binding("f6", "panel_widen", "F6 →", show=False),
         Binding("f7", "delete_hovered", "F7 Delete", show=False),
         Binding("f8", "rename_hovered", "F8 Rename", show=False),
+        Binding("f9", "copy_mode", "F9 Copy", show=False),
+        Binding("f10", "paste_clipboard", "F10 Paste", show=False),
         Binding("ctrl+q", "quit_app", "Quit", show=True),
     ]
 
@@ -664,6 +668,22 @@ class HelmApp(App):
                 self._update_list()
 
         self.push_screen(RenameScreen(session.name), handle_result)
+
+    def _active_terminal(self) -> TerminalWidget | None:
+        try:
+            return self.query_one(f"#{self._active_terminal_id}", TerminalWidget)
+        except Exception:
+            return None
+
+    def action_copy_mode(self) -> None:
+        t = self._active_terminal()
+        if t:
+            t.enter_copy_mode()
+
+    def action_paste_clipboard(self) -> None:
+        t = self._active_terminal()
+        if t:
+            t.paste_from_clipboard()
 
     def action_panel_narrow(self) -> None:
         sl = self.query_one("#session-list")
