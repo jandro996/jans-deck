@@ -18,3 +18,4 @@ dependencies = [
 jans = "jans.__main__:main"
 jans-ctl = "jans.ctl:main"
 jans-menu = "jans.menubar:main"
+jans-gui = "jans.gui:main"
