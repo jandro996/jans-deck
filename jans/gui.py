@@ -52,6 +52,7 @@ STATE_ICON = {
 }
 
 _JANS_DIR = Path(__file__).parent.parent
+_JANS_CWD = str(Path.home() / "research" / "jans")
 
 
 def _age(session: Session) -> str:
@@ -213,11 +214,15 @@ class JansApp:
     # ── UI ────────────────────────────────────────────────────
 
     def _build_ui(self) -> None:
-        # Header
-        hdr = tk.Frame(self._root, bg=ORANGE)
+        # Header (clickable - opens jans orchestrator session)
+        hdr = tk.Frame(self._root, bg=ORANGE, cursor="hand2")
         hdr.pack(fill="x")
-        tk.Label(hdr, text="jans", bg=ORANGE, fg="white",
-                 font=("SF Pro Display", 14, "bold"), pady=7).pack()
+        hdr_lbl = tk.Label(hdr, text="jans", bg=ORANGE, fg="white",
+                           font=("SF Pro Display", 14, "bold"), pady=7,
+                           cursor="hand2")
+        hdr_lbl.pack()
+        hdr.bind("<Button-1>", lambda e: self._open_jans_session())
+        hdr_lbl.bind("<Button-1>", lambda e: self._open_jans_session())
 
         # Status bar (under header)
         self._status_var = tk.StringVar(value="loading…")
@@ -270,7 +275,7 @@ class JansApp:
             w.destroy()
 
         with self._lock:
-            sessions = list(self._sessions)
+            sessions = [s for s in self._sessions if s.cwd != _JANS_CWD]
 
         paused  = [s for s in sessions if s.state == SessionState.PAUSED]
         active  = [s for s in sessions if s.state != SessionState.PAUSED]
@@ -524,6 +529,31 @@ class JansApp:
             self._root.after(0, self._render_sessions)
             return {"ok": True}
         return {"error": f"unknown: {action}"}
+
+    def _open_jans_session(self) -> None:
+        with self._lock:
+            jans_session = next((s for s in self._sessions if s.cwd == _JANS_CWD), None)
+
+        if jans_session is not None and jans_session.state != SessionState.PAUSED:
+            claude = find_claude_session_for_cwd(jans_session.cwd)
+            if claude and claude[1]:
+                tty = _pid_tty(claude[1])
+                if tty:
+                    _focus_session_by_tty(tty)
+                    return
+
+        if jans_session is not None:
+            _open_session(jans_session)
+            with self._lock:
+                for i, s in enumerate(self._sessions):
+                    if s.cwd == _JANS_CWD:
+                        self._sessions[i] = dataclasses.replace(s, state=SessionState.PROCESSING)
+        else:
+            import uuid
+            s = Session(name="jans", cwd=_JANS_CWD, session_id=str(uuid.uuid4()))
+            with self._lock:
+                self._sessions.append(s)
+            _open_session(s)
 
     def _on_close(self) -> None:
         with self._lock:
