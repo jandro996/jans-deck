@@ -207,6 +207,12 @@ class JansApp:
         self._root.minsize(240, 300)
         self._root.protocol("WM_DELETE_WINDOW", self._on_close)
 
+        _icon = _JANS_DIR / "jans.iconset" / "icon_512x512.png"
+        if _icon.exists():
+            img = tk.PhotoImage(file=str(_icon))
+            self._root.iconphoto(True, img)
+            self._icon_ref = img  # prevent GC
+
         self._build_ui()
         self._refresh()
         self._root.after(3000, self._tick)
