@@ -469,18 +469,31 @@ class JansApp:
         path = filedialog.askdirectory(title="Select directory", parent=self._root)
         if path:
             name = Path(path).name
+            with self._lock:
+                color = self._next_color()
             s = Session(name=name, cwd=path,
-                        session_id=__import__("uuid").uuid4().__str__())
+                        session_id=__import__("uuid").uuid4().__str__(), color=color)
             with self._lock:
                 self._sessions.append(s)
             _open_session(s)
             self._render_sessions()
 
+    def _next_color(self) -> str:
+        palette = list(USER_COLORS.keys())
+        used = {s.color for s in self._sessions if s.color}
+        for c in palette:
+            if c not in used:
+                return c
+        # all used: cycle by session count
+        return palette[len(self._sessions) % len(palette)]
+
     def _create_session(self, mode: str, name: str) -> None:
         import uuid
         cwd = str(Path.home() / "research" / name)
         Path(cwd).mkdir(parents=True, exist_ok=True)
-        s = Session(name=name, cwd=cwd, session_id=str(uuid.uuid4()))
+        with self._lock:
+            color = self._next_color()
+        s = Session(name=name, cwd=cwd, session_id=str(uuid.uuid4()), color=color)
         with self._lock:
             self._sessions.append(s)
         _open_session(s)
@@ -524,7 +537,8 @@ class JansApp:
             name = cmd.get("name") or Path(path).name
             with self._lock:
                 if not any(s.name == name for s in self._sessions):
-                    s = Session(name=name, cwd=path, session_id=str(uuid.uuid4()))
+                    color = self._next_color()
+                    s = Session(name=name, cwd=path, session_id=str(uuid.uuid4()), color=color)
                     self._sessions.append(s)
             self._root.after(0, self._render_sessions)
             return {"ok": True}
