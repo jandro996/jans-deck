@@ -484,7 +484,6 @@ class JansApp:
         for c in palette:
             if c not in used:
                 return c
-        # all used: cycle by session count
         return palette[len(self._sessions) % len(palette)]
 
     def _create_session(self, mode: str, name: str) -> None:
