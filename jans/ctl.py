@@ -6,8 +6,11 @@ from pathlib import Path
 from jans.core.commands import send_command
 
 
+COLORS = ["red", "orange", "yellow", "green", "blue", "purple", "pink", "teal"]
+
+
 def usage():
-    print("""jans-ctl <command> [args]
+    print(f"""jans-ctl <command> [args]
 
 Commands:
   list                        List all sessions and their states
@@ -16,6 +19,7 @@ Commands:
   load <path> [name]          Load an existing directory as a session
   rename <current> <new>      Rename a session
   delete <name>               Remove a session from jans
+  color <name> <color>        Set a color tag for a session ({", ".join(COLORS)})
   home                        Switch right panel back to orchestrator
   switch <name>               Switch right panel to a named session
   state                       Show current app state (sessions + status)
@@ -60,6 +64,11 @@ def main():
             print("Error: name required", file=sys.stderr)
             sys.exit(1)
         result = send_command("delete", name=rest[0])
+    elif cmd == "color":
+        if len(rest) < 2:
+            print(f"Error: name and color required. Colors: {', '.join(COLORS)}", file=sys.stderr)
+            sys.exit(1)
+        result = send_command("color", name=rest[0], color=rest[1])
     elif cmd == "home":
         result = send_command("home")
     elif cmd == "switch":

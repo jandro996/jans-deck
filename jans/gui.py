@@ -9,7 +9,7 @@ from tkinter import simpledialog
 from jans.core.commands import read_pending_command, write_result
 from jans.core.log import log
 from jans.core.persistence import load_saved_sessions, save_sessions
-from jans.core.state_detector import detect_state, find_real_session_id
+from jans.core.state_detector import detect_state, find_claude_session_for_cwd
 from jans.models import Session, SessionState
 
 # ── Colors (Catppuccin-inspired) ──────────────────────────────
@@ -24,6 +24,17 @@ GREEN      = "#a6e3a1"
 RED        = "#f38ba8"
 BLUE       = "#89b4fa"
 PURPLE     = "#cba6f7"
+
+USER_COLORS = {
+    "red":    ("#f38ba8", (243, 139, 168)),
+    "orange": ("#e07a3e", (224, 122,  62)),
+    "yellow": ("#f9e2af", (249, 226, 175)),
+    "green":  ("#a6e3a1", (166, 227, 161)),
+    "blue":   ("#89b4fa", (137, 180, 250)),
+    "purple": ("#cba6f7", (203, 166, 247)),
+    "pink":   ("#f5c2e7", (245, 194, 231)),
+    "teal":   ("#94e2d5", (148, 226, 213)),
+}
 
 STATE_COLOR = {
     SessionState.PROCESSING:  YELLOW,
@@ -92,15 +103,83 @@ end tell'''
     subprocess.run(["osascript", "-e", script], capture_output=True)
 
 
-def _focus_session(session: Session) -> None:
-    name = session.name
+def _write_tty(tty: str, seq: str) -> None:
+    try:
+        with open(tty, "w") as f:
+            f.write(seq)
+    except Exception:
+        pass
+
+
+def _set_iterm_tab_color(tty: str, rgb: tuple[int, int, int] | None) -> None:
+    if rgb:
+        r, g, b = rgb
+        seq = (
+            f"\033]6;1;bg;red;brightness;{r}\a"
+            f"\033]6;1;bg;green;brightness;{g}\a"
+            f"\033]6;1;bg;blue;brightness;{b}\a"
+        )
+    else:
+        seq = "\033]6;1;bg;*;default\a"
+    _write_tty(tty, seq)
+
+
+def _set_iterm_badge(tty: str, name: str) -> None:
+    import base64
+    b64 = base64.b64encode(name.encode()).decode()
+    _write_tty(tty, f"\033]1337;SetBadgeFormat={b64}\a")
+
+
+def _set_iterm_title(tty: str, name: str) -> None:
+    _write_tty(tty, f"\033]0;{name}\a")
+
+
+def _iterm_open_ttys() -> set[str]:
+    """Return the set of tty paths for all sessions currently open in iTerm2."""
+    script = '''\
+tell application "iTerm2"
+    set ttys to {}
+    repeat with w in windows
+        repeat with t in tabs of w
+            repeat with s in sessions of t
+                set end of ttys to tty of s
+            end repeat
+        end repeat
+    end repeat
+    set AppleScript's text item delimiters to ","
+    return ttys as text
+end tell'''
+    try:
+        r = subprocess.run(["osascript", "-e", script],
+                           capture_output=True, text=True, timeout=2)
+        if r.returncode != 0 or not r.stdout.strip():
+            return set()
+        return {t.strip() for t in r.stdout.strip().split(",") if t.strip()}
+    except Exception:
+        return set()
+
+
+def _pid_tty(pid: int) -> str | None:
+    """Return the /dev/ttysXXX path for a process, or None if it has no tty."""
+    try:
+        r = subprocess.run(["ps", "-o", "tty=", "-p", str(pid)],
+                           capture_output=True, text=True)
+        tty = r.stdout.strip()
+        if tty and tty != "??" and tty != "??":
+            return f"/dev/{tty}"
+    except Exception:
+        pass
+    return None
+
+
+def _focus_session_by_tty(tty: str) -> None:
     script = f'''
 tell application "iTerm2"
     activate
     repeat with w in windows
         repeat with t in tabs of w
             repeat with s in sessions of t
-                if name of s contains "{name}" then
+                if tty of s = "{tty}" then
                     tell w to select
                     select t
                     return
@@ -116,11 +195,14 @@ class JansApp:
     def __init__(self):
         self._sessions: list[Session] = load_saved_sessions()
         self._lock = threading.Lock()
+        self._tab_colors_applied: dict[str, str] = {}   # name -> color applied
+        self._badge_applied: set[str] = set()           # names with badge set
+        self._title_state: dict[str, SessionState] = {} # name -> state when title was last set
 
         self._root = tk.Tk()
         self._root.title("jans")
         self._root.configure(bg=BG)
-        self._root.geometry("300x500")
+        self._root.geometry("280x520")
         self._root.minsize(240, 300)
         self._root.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -132,12 +214,12 @@ class JansApp:
 
     def _build_ui(self) -> None:
         # Header
-        hdr = tk.Frame(self._root, bg=ORANGE, cursor="hand2")
+        hdr = tk.Frame(self._root, bg=ORANGE)
         hdr.pack(fill="x")
-        tk.Label(hdr, text="  jans  ", bg=ORANGE, fg="white",
-                 font=("SF Pro Display", 15, "bold"), pady=8).pack()
+        tk.Label(hdr, text="jans", bg=ORANGE, fg="white",
+                 font=("SF Pro Display", 14, "bold"), pady=7).pack()
 
-        # Status bar
+        # Status bar (under header)
         self._status_var = tk.StringVar(value="loading…")
         tk.Label(self._root, textvariable=self._status_var,
                  bg=BG_SURFACE, fg=FG_DIM, font=("SF Mono", 10),
@@ -153,14 +235,16 @@ class JansApp:
 
         self._session_frame.bind("<Configure>",
             lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.create_window((0, 0), window=self._session_frame, anchor="nw")
+        canvas.create_window((0, 0), window=self._session_frame, anchor="nw", tags="inner")
+        canvas.bind("<Configure>",
+            lambda e: canvas.itemconfig("inner", width=e.width))
         canvas.configure(yscrollcommand=scrollbar.set)
 
         scrollbar.pack(side="right", fill="y")
         canvas.pack(side="left", fill="both", expand=True)
 
         # Toolbar
-        toolbar = tk.Frame(self._root, bg=BG_SURFACE, pady=6)
+        toolbar = tk.Frame(self._root, bg=BG_SURFACE, pady=5)
         toolbar.pack(fill="x", side="bottom")
         for text, cmd in [
             ("＋ Research", self._new_research),
@@ -169,9 +253,17 @@ class JansApp:
         ]:
             tk.Button(toolbar, text=text, command=cmd,
                       bg=BG_HOVER, fg=FG, relief="flat",
-                      font=("SF Pro Text", 11), padx=8, pady=4,
+                      font=("SF Pro Text", 10), padx=7, pady=3,
                       cursor="hand2", activebackground=PURPLE,
-                      activeforeground=BG).pack(side="left", padx=4, pady=2)
+                      activeforeground=BG).pack(side="left", padx=3, pady=2)
+
+    def _add_section_header(self, label: str) -> None:
+        hdr = tk.Frame(self._session_frame, bg=BG, pady=3)
+        hdr.pack(fill="x", padx=10, pady=(4, 0))
+        tk.Frame(hdr, bg=BG_SURFACE, height=1).pack(side="left", fill="x", expand=True, pady=5)
+        tk.Label(hdr, text=f"  {label}  ", bg=BG, fg=FG_DIM,
+                 font=("SF Pro Text", 9)).pack(side="left")
+        tk.Frame(hdr, bg=BG_SURFACE, height=1).pack(side="left", fill="x", expand=True, pady=5)
 
     def _render_sessions(self) -> None:
         for w in self._session_frame.winfo_children():
@@ -183,17 +275,15 @@ class JansApp:
         paused  = [s for s in sessions if s.state == SessionState.PAUSED]
         active  = [s for s in sessions if s.state != SessionState.PAUSED]
 
-        def add_section(label: str, group: list) -> None:
-            if not group:
-                return
-            tk.Label(self._session_frame, text=label, bg=BG,
-                     fg=FG_DIM, font=("SF Pro Text", 10), anchor="w",
-                     padx=10, pady=2).pack(fill="x")
-            for s in group:
+        if paused:
+            self._add_section_header("paused")
+            for s in paused:
                 self._add_session_row(s)
 
-        add_section("── paused ──", paused)
-        add_section("── active ──", active)
+        if active:
+            self._add_section_header("active")
+            for s in active:
+                self._add_session_row(s)
 
         if not sessions:
             tk.Label(self._session_frame, text="No sessions yet",
@@ -208,33 +298,63 @@ class JansApp:
         if ni: parts.append(f"⚡ {ni} needs input")
         if wt: parts.append(f"● {wt} waiting")
         if pr: parts.append(f"▶ {pr} processing")
-        self._status_var.set("  " + "   ".join(parts) if parts else "  no active sessions")
+        self._status_var.set("  " + "   ".join(parts) if parts else "  all paused")
 
     def _add_session_row(self, session: Session) -> None:
         color = STATE_COLOR.get(session.state, FG)
         icon  = STATE_ICON.get(session.state, "?")
-        name  = session.name if len(session.name) <= 18 else "…" + session.name[-17:]
+        name  = session.name if len(session.name) <= 22 else "…" + session.name[-21:]
         cwd   = session.cwd.replace(str(Path.home()), "~")
         age   = _age(session)
 
+        # Outer wrapper (full width, no horizontal padding so border touches edge)
         row = tk.Frame(self._session_frame, bg=BG, cursor="hand2")
-        row.pack(fill="x", padx=4, pady=1)
+        row.pack(fill="x", pady=0)
 
-        top = tk.Frame(row, bg=BG)
+        # Left color accent
+        accent = tk.Frame(row, bg=color, width=3)
+        accent.pack(side="left", fill="y")
+
+        # Content
+        content = tk.Frame(row, bg=BG)
+        content.pack(side="left", fill="both", expand=True, padx=(8, 6), pady=4)
+
+        top = tk.Frame(content, bg=BG)
         top.pack(fill="x")
-        tk.Label(top, text=f" {icon} ", bg=BG, fg=color,
-                 font=("SF Mono", 13)).pack(side="left")
-        tk.Label(top, text=name, bg=BG, fg=FG,
-                 font=("SF Pro Text", 12, "bold")).pack(side="left")
-        tk.Label(top, text=age, bg=BG, fg=FG_DIM,
-                 font=("SF Pro Text", 10)).pack(side="right", padx=6)
+        icon_lbl = tk.Label(top, text=f"{icon} ", bg=BG, fg=color,
+                            font=("SF Mono", 11))
+        icon_lbl.pack(side="left")
+        name_lbl = tk.Label(top, text=name, bg=BG, fg=FG,
+                            font=("SF Pro Text", 12, "bold"))
+        name_lbl.pack(side="left")
+        user_color = USER_COLORS.get(session.color or "")
+        color_dot = None
+        if user_color:
+            color_dot = tk.Frame(top, bg=user_color[0], width=10, height=14)
+            color_dot.pack(side="left", padx=(5, 0))
+            color_dot.pack_propagate(False)
+        age_lbl = tk.Label(top, text=age, bg=BG, fg=FG_DIM,
+                           font=("SF Pro Text", 10))
+        age_lbl.pack(side="right")
 
-        tk.Label(row, text=f"   {cwd}", bg=BG, fg=FG_DIM,
-                 font=("SF Mono", 10)).pack(fill="x", anchor="w")
+        cwd_lbl = tk.Label(content, text=cwd, bg=BG, fg=FG_DIM,
+                           font=("SF Mono", 10), anchor="w")
+        cwd_lbl.pack(fill="x")
 
-        # Hover and click
-        def on_enter(e, r=row): r.configure(bg=BG_HOVER)
-        def on_leave(e, r=row): r.configure(bg=BG)
+        # Bottom separator
+        tk.Frame(self._session_frame, bg=BG_SURFACE, height=1).pack(fill="x")
+
+        # Hover: propagate bg to all content widgets (not the accent border)
+        hover_widgets = [row, content, top, icon_lbl, name_lbl, age_lbl, cwd_lbl]
+
+        def on_enter(e):
+            for w in hover_widgets:
+                w.configure(bg=BG_HOVER)
+
+        def on_leave(e):
+            for w in hover_widgets:
+                w.configure(bg=BG)
+
         def on_click(e, s=session):
             if s.state == SessionState.PAUSED:
                 _open_session(s)
@@ -243,9 +363,15 @@ class JansApp:
                         if x.session_id == s.session_id:
                             self._sessions[i] = dataclasses.replace(x, state=SessionState.PROCESSING)
             else:
-                _focus_session(s)
+                claude = find_claude_session_for_cwd(s.cwd)
+                if claude and claude[1]:
+                    tty = _pid_tty(claude[1])
+                    if tty:
+                        _focus_session_by_tty(tty)
+                        return
+                _open_session(s)
 
-        for widget in [row, top] + list(row.winfo_children()) + list(top.winfo_children()):
+        for widget in hover_widgets:
             widget.bind("<Enter>", on_enter)
             widget.bind("<Leave>", on_leave)
             widget.bind("<Button-1>", on_click)
@@ -253,18 +379,56 @@ class JansApp:
     # ── Refresh ───────────────────────────────────────────────
 
     def _refresh(self) -> None:
+        open_ttys = _iterm_open_ttys()
+
         with self._lock:
             new_sessions = []
             for s in self._sessions:
-                if s.state == SessionState.PAUSED:
+                claude = find_claude_session_for_cwd(s.cwd)
+                has_iterm_tab = (
+                    claude is not None
+                    and claude[1] is not None
+                    and _pid_tty(claude[1]) in open_ttys
+                )
+
+                if not has_iterm_tab:
+                    if s.state not in (SessionState.PAUSED, SessionState.TERMINATED):
+                        s = dataclasses.replace(s, state=SessionState.PAUSED)
+                    self._tab_colors_applied.pop(s.name, None)
+                    self._badge_applied.discard(s.name)
+                    self._title_state.pop(s.name, None)
                     new_sessions.append(s)
                     continue
-                real_id = find_real_session_id(s.cwd)
-                if real_id and real_id != s.session_id:
-                    s = dataclasses.replace(s, session_id=real_id)
+
+                session_id, pid = claude
+                if session_id and session_id != s.session_id:
+                    s = dataclasses.replace(s, session_id=session_id)
                 new_state, last_activity = detect_state(s)
                 if new_state != s.state or last_activity != s.last_activity:
                     s = dataclasses.replace(s, state=new_state, last_activity=last_activity)
+
+                tty = _pid_tty(pid) if pid else None
+                if tty:
+                    # Color: apply once (or when changed)
+                    if s.color and self._tab_colors_applied.get(s.name) != s.color:
+                        user_color = USER_COLORS.get(s.color)
+                        if user_color:
+                            _set_iterm_tab_color(tty, user_color[1])
+                            self._tab_colors_applied[s.name] = s.color
+
+                    # Badge: set once on activation
+                    if s.name not in self._badge_applied:
+                        _set_iterm_badge(tty, s.name)
+                        self._badge_applied.add(s.name)
+
+                    # Title: lock when idle, release when processing
+                    if new_state != SessionState.PROCESSING:
+                        if self._title_state.get(s.name) != new_state:
+                            _set_iterm_title(tty, s.name)
+                            self._title_state[s.name] = new_state
+                    else:
+                        self._title_state.pop(s.name, None)
+
                 new_sessions.append(s)
             self._sessions = new_sessions
 
@@ -277,6 +441,8 @@ class JansApp:
     def _tick(self) -> None:
         try:
             self._refresh()
+            with self._lock:
+                save_sessions(self._sessions)
         except Exception as e:
             log.error("GUI refresh error: %s", e)
         self._root.after(3000, self._tick)
@@ -335,6 +501,26 @@ class JansApp:
                     dataclasses.replace(s, name=new) if s.name == current else s
                     for s in self._sessions
                 ]
+            self._root.after(0, self._render_sessions)
+            return {"ok": True}
+        elif action == "color":
+            name, color = cmd.get("name"), cmd.get("color")
+            with self._lock:
+                self._sessions = [
+                    dataclasses.replace(s, color=color) if s.name == name else s
+                    for s in self._sessions
+                ]
+            self._tab_colors_applied.pop(name, None)
+            self._root.after(0, self._render_sessions)
+            return {"ok": True}
+        elif action == "load":
+            import uuid
+            path = cmd.get("path", "")
+            name = cmd.get("name") or Path(path).name
+            with self._lock:
+                if not any(s.name == name for s in self._sessions):
+                    s = Session(name=name, cwd=path, session_id=str(uuid.uuid4()))
+                    self._sessions.append(s)
             self._root.after(0, self._render_sessions)
             return {"ok": True}
         return {"error": f"unknown: {action}"}

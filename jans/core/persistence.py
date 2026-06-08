@@ -17,6 +17,7 @@ def save_sessions(sessions: list[Session]) -> None:
             "cwd": s.cwd,
             "session_id": s.session_id,
             "last_activity": s.last_activity.isoformat(),
+            **({"color": s.color} if s.color else {}),
         }
         for s in sessions
         if s.state != SessionState.TERMINATED and s.pid is None
@@ -44,6 +45,7 @@ def load_saved_sessions() -> list[Session]:
                 session_id=d["session_id"],
                 state=SessionState.PAUSED,
                 last_activity=datetime.fromisoformat(d["last_activity"]),
+                color=d.get("color"),
             ))
         log.info("loaded %d sessions from state.json", len(sessions))
         return sessions

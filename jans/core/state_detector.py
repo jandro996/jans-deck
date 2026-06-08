@@ -128,10 +128,16 @@ def _norm(path: str) -> str:
 
 def find_real_session_id(cwd: str) -> str | None:
     """Find the most recent active Claude session ID for a given cwd."""
+    result = find_claude_session_for_cwd(cwd)
+    return result[0] if result else None
+
+
+def find_claude_session_for_cwd(cwd: str) -> tuple[str, int] | None:
+    """Return (session_id, pid) for the most recent active Claude session for cwd."""
     if not CLAUDE_SESSIONS.exists():
         return None
     cwd_norm = _norm(cwd)
-    best = None
+    best: tuple[str, int] | None = None
     best_mtime = 0.0
     for f in CLAUDE_SESSIONS.glob("*.json"):
         try:
@@ -144,7 +150,7 @@ def find_real_session_id(cwd: str) -> str | None:
             mtime = f.stat().st_mtime
             if mtime > best_mtime:
                 best_mtime = mtime
-                best = data.get("sessionId")
+                best = (data.get("sessionId"), pid)
         except Exception:
             pass
     return best
