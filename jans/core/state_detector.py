@@ -7,7 +7,8 @@ from jans.models import Session, SessionState
 
 CLAUDE_SESSIONS = Path.home() / ".claude" / "sessions"
 CLAUDE_PROJECTS = Path.home() / ".claude" / "projects"
-PROCESSING_THRESHOLD_SECS = 8
+PROCESSING_THRESHOLD_SECS = 5
+IDLE_THRESHOLD_SECS = 300  # 5 min with no activity → truly idle (WAITING)
 
 
 def _is_pid_alive(pid: int) -> bool:
@@ -90,6 +91,10 @@ def detect_state(session: Session) -> tuple[SessionState, datetime]:
         return SessionState.PROCESSING, mtime
 
     if last_type == "assistant":
+        # Recently finished → user needs to respond (NEEDS_INPUT)
+        # Idle for a long time → truly waiting with no urgency (WAITING)
+        if age < IDLE_THRESHOLD_SECS:
+            return SessionState.NEEDS_INPUT, mtime
         return SessionState.WAITING, mtime
 
     return SessionState.PROCESSING, mtime
