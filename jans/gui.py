@@ -439,7 +439,7 @@ class JansApp:
                     if new_state != SessionState.PROCESSING:
                         if self._title_state.get(s.name) != new_state:
                             icon = STATE_ICON.get(new_state, "")
-                            _set_iterm_title(tty, f"{icon} {s.name}")
+                            _set_iterm_title(tty, f"{s.name} {icon}")
                             self._title_state[s.name] = new_state
                     else:
                         self._title_state.pop(s.name, None)
