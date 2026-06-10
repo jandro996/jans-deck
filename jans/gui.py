@@ -213,9 +213,12 @@ class JansApp:
             self._root.iconphoto(True, img)
             self._icon_ref = img  # prevent GC
 
+        self._iterm_was_front = False
+
         self._build_ui()
         self._refresh()
         self._root.after(3000, self._tick)
+        self._root.after(1000, self._focus_poll)
 
     # ── UI ────────────────────────────────────────────────────
 
@@ -432,10 +435,11 @@ class JansApp:
                         _set_iterm_badge(tty, s.name)
                         self._badge_applied.add(s.name)
 
-                    # Title: lock when idle, release when processing
+                    # Title: show state icon when idle, release when processing
                     if new_state != SessionState.PROCESSING:
                         if self._title_state.get(s.name) != new_state:
-                            _set_iterm_title(tty, s.name)
+                            icon = STATE_ICON.get(new_state, "")
+                            _set_iterm_title(tty, f"{icon} {s.name}")
                             self._title_state[s.name] = new_state
                     else:
                         self._title_state.pop(s.name, None)
@@ -573,6 +577,13 @@ class JansApp:
             with self._lock:
                 self._sessions.append(s)
             _open_session(s)
+
+    def _focus_poll(self) -> None:
+        iterm_front = _active_app() == "iterm2"
+        if iterm_front and not self._iterm_was_front:
+            self._root.lift()
+        self._iterm_was_front = iterm_front
+        self._root.after(1000, self._focus_poll)
 
     def _on_close(self) -> None:
         with self._lock:
