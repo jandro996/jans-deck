@@ -18,9 +18,10 @@ def save_sessions(sessions: list[Session]) -> None:
             "session_id": s.session_id,
             "last_activity": s.last_activity.isoformat(),
             **({"color": s.color} if s.color else {}),
+            **({"kind": s.kind} if s.kind else {}),
         }
         for s in sessions
-        if s.state != SessionState.TERMINATED and s.pid is None
+        if s.state != SessionState.TERMINATED
     ]
     STATE_FILE.write_text(json.dumps(data, indent=2))
     log.info("saved %d sessions to state.json (total in memory: %d, skipped terminated/external: %d)",
@@ -46,6 +47,7 @@ def load_saved_sessions() -> list[Session]:
                 state=SessionState.PAUSED,
                 last_activity=datetime.fromisoformat(d["last_activity"]),
                 color=d.get("color"),
+                kind=d.get("kind"),
             ))
         log.info("loaded %d sessions from state.json", len(sessions))
         return sessions

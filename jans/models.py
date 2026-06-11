@@ -30,3 +30,4 @@ class Session:
     pid: int | None = None
     terminal_id: str | None = None
     color: str | None = None
+    kind: str | None = None  # research | task | tool | review
