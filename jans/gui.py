@@ -53,7 +53,21 @@ STATE_ICON = {
 
 _JANS_DIR = Path(__file__).parent.parent
 _JANS_CWD = str(Path.home() / "research" / "jans")
-_TOOLS_DIR = Path.home() / "tools"
+_TOOLS_DIR   = Path.home() / "tools"
+_REVIEWS_DIR = Path.home() / "reviews"
+
+
+def _parse_github_pr_url(url: str) -> tuple[str, str, str] | None:
+    """Parse a GitHub PR URL into (full_repo, short_name, pr_number).
+    Accepts: https://github.com/Owner/repo/pull/1234
+    Returns: ('Owner/repo', 'repo', '1234') or None if not parseable.
+    """
+    import re
+    m = re.match(r"https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)", url.strip())
+    if not m:
+        return None
+    owner, repo, pr = m.group(1), m.group(2), m.group(3)
+    return f"{owner}/{repo}", repo, pr
 
 
 def _bootstrap_planning_files(
@@ -343,6 +357,7 @@ class JansApp:
             ("＋ Research", self._new_research),
             ("＋ Task",     self._new_task),
             ("＋ Tool",     self._new_tool),
+            ("＋ Review",   self._new_review),
             ("⤴ Load",     self._load_dir),
         ]:
             tk.Button(toolbar, text=text, command=cmd,
@@ -588,6 +603,43 @@ class JansApp:
         if name and name.strip():
             self._create_session("tool", name.strip(), cwd=str(_TOOLS_DIR / name.strip()))
 
+    def _new_review(self) -> None:
+        from tkinter import messagebox
+        url = simpledialog.askstring("New review session", "GitHub PR URL:", parent=self._root)
+        if not url or not url.strip():
+            return
+        parsed = _parse_github_pr_url(url.strip())
+        if not parsed:
+            messagebox.showerror("Invalid URL",
+                                 "Could not parse URL.\nExpected: https://github.com/Owner/repo/pull/1234",
+                                 parent=self._root)
+            return
+        full_repo, short_name, pr_number = parsed
+        self._create_review_session(full_repo, short_name, pr_number)
+
+    def _create_review_session(self, full_repo: str, short_name: str, pr_number: str) -> None:
+        import uuid
+        name = f"{short_name}-PR-{pr_number}"
+        cwd  = str(_REVIEWS_DIR / name)
+        Path(cwd).mkdir(parents=True, exist_ok=True)
+        _bootstrap_planning_files(cwd, "review", name, repo=full_repo, pr=pr_number)
+
+        local_repo = Path.home() / "IdeaProjects" / short_name
+        if local_repo.exists():
+            subprocess.run(
+                ["git", "-C", str(local_repo), "worktree", "add", cwd,
+                 "--detach"],
+                capture_output=True,
+            )
+
+        with self._lock:
+            color = self._next_color()
+        s = Session(name=name, cwd=cwd, session_id=str(uuid.uuid4()), color=color)
+        with self._lock:
+            self._sessions.append(s)
+        _open_session(s, resume=False)
+        self._render_sessions()
+
     def _load_dir(self) -> None:
         from tkinter import filedialog
         path = filedialog.askdirectory(title="Select directory", parent=self._root)
@@ -636,6 +688,15 @@ class JansApp:
             name = cmd.get("name", "session")
             cwd = str(_TOOLS_DIR / name) if mode == "tool" else None
             self._root.after(0, lambda m=mode, n=name, c=cwd: self._create_session(m, n, cwd=c))
+            return {"ok": True}
+        elif action == "new-review":
+            url = cmd.get("url", "")
+            parsed = _parse_github_pr_url(url)
+            if not parsed:
+                return {"error": f"invalid GitHub PR URL: {url}"}
+            full_repo, short_name, pr_number = parsed
+            self._root.after(0, lambda f=full_repo, s=short_name, p=pr_number:
+                             self._create_review_session(f, s, p))
             return {"ok": True}
         elif action == "delete":
             name = cmd.get("name")
