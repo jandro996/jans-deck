@@ -706,6 +706,7 @@ class JansApp:
         with self._lock:
             self._sessions.append(s)
         _open_session(s, resume=False)
+        self._switch_tab("reviews")
         self._render_sessions()
 
     def _load_dir(self) -> None:
@@ -720,6 +721,7 @@ class JansApp:
             with self._lock:
                 self._sessions.append(s)
             _open_session(s)
+            self._switch_tab(_session_kind(s))
             self._render_sessions()
 
     def _next_color(self) -> str:
@@ -746,6 +748,7 @@ class JansApp:
         with self._lock:
             self._sessions.append(s)
         _open_session(s, resume=False)
+        self._switch_tab(kind)
         self._render_sessions()
 
     def _execute_command(self, cmd: dict) -> dict:
@@ -801,6 +804,11 @@ class JansApp:
                     color = self._next_color()
                     s = Session(name=name, cwd=path, session_id=str(uuid.uuid4()), color=color)
                     self._sessions.append(s)
+                    kind = _session_kind(s)
+                else:
+                    kind = None
+            if kind:
+                self._root.after(0, lambda k=kind: self._switch_tab(k))
             self._root.after(0, self._render_sessions)
             return {"ok": True}
         return {"error": f"unknown: {action}"}
