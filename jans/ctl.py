@@ -16,6 +16,8 @@ Commands:
   list                        List all sessions and their states
   new-research <name>         Create a new research session in ~/research/<name>/
   new-task <name>             Create a new task session
+  new-tool <name>             Create a new tooling session in ~/tools/<name>/
+  new-review <url>            Create a review session from a GitHub PR URL
   load <path> [name]          Load an existing directory as a session
   rename <current> <new>      Rename a session
   delete <name>               Remove a session from jans
@@ -47,6 +49,16 @@ def main():
             print("Error: name required", file=sys.stderr)
             sys.exit(1)
         result = send_command("new-task", name=rest[0])
+    elif cmd == "new-tool":
+        if not rest:
+            print("Error: name required", file=sys.stderr)
+            sys.exit(1)
+        result = send_command("new-tool", name=rest[0])
+    elif cmd == "new-review":
+        if not rest:
+            print("Error: GitHub PR URL required", file=sys.stderr)
+            sys.exit(1)
+        result = send_command("new-review", url=rest[0])
     elif cmd == "load":
         if not rest:
             print("Error: path required", file=sys.stderr)
