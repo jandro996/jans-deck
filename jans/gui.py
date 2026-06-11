@@ -55,6 +55,84 @@ _JANS_DIR = Path(__file__).parent.parent
 _JANS_CWD = str(Path.home() / "research" / "jans")
 
 
+def _bootstrap_planning_files(
+    cwd: str,
+    mode: str,
+    name: str,
+    repo: str | None = None,
+    pr: str | None = None,
+) -> None:
+    base = Path(cwd)
+
+    def _write(filename: str, content: str) -> None:
+        p = base / filename
+        if not p.exists():
+            p.write_text(content)
+
+    if mode == "research":
+        _write("session.md", (
+            "---\n"
+            "type: research\n"
+            "related_projects: []\n"
+            f"investigation: {name}\n"
+            "contribution_targets: []\n"
+            "---\n"
+        ))
+        _write("task_plan.md", _task_plan_content(name))
+        _write("findings.md", f"# Findings: {name}\n")
+        _write("progress.md", f"# Progress: {name}\n")
+
+    elif mode == "task":
+        _write("session.md", (
+            "---\n"
+            "type: task\n"
+            "related_projects: []\n"
+            'feature: ""\n'
+            "contribution_targets: []\n"
+            "---\n"
+        ))
+        _write("task_plan.md", _task_plan_content(name))
+        _write("findings.md", f"# Findings: {name}\n")
+        _write("progress.md", f"# Progress: {name}\n")
+
+    elif mode == "tool":
+        _write("session.md", (
+            "---\n"
+            "type: tooling\n"
+            "related_projects:\n"
+            "  - _meta\n"
+            "contribution_targets:\n"
+            "  - _meta/workflow.md\n"
+            "---\n"
+        ))
+        _write("task_plan.md", _task_plan_content(name))
+        _write("findings.md", f"# Findings: {name}\n")
+        _write("progress.md", f"# Progress: {name}\n")
+
+    elif mode == "review":
+        _write("session.md", (
+            "---\n"
+            "type: pr-review-incoming\n"
+            f"repo: {repo or ''}\n"
+            f"pr: {pr or ''}\n"
+            "related_projects: []\n"
+            "---\n"
+        ))
+
+
+def _task_plan_content(name: str) -> str:
+    return (
+        f"# Task plan: {name}\n\n"
+        "## Phases\n\n"
+        "- [ ] Phase 0: Pre-code analysis (/pre-code)\n"
+        "- [ ] Phase 1: Implementation\n"
+        "- [ ] Phase 2: Pre-PR review (/pre-pr)\n"
+        "- [ ] Phase 3: Open PR (/pr-describe)\n"
+        "- [ ] Phase 4: Address review comments\n"
+        "- [ ] Phase 5: Merge and close (/finish-pr)\n"
+    )
+
+
 def _age(session: Session) -> str:
     from datetime import datetime
     s = int((datetime.now() - session.last_activity).total_seconds())
@@ -496,10 +574,15 @@ class JansApp:
                 return c
         return palette[len(self._sessions) % len(palette)]
 
-    def _create_session(self, mode: str, name: str) -> None:
+    def _create_session(self, mode: str, name: str,
+                        cwd: str | None = None,
+                        repo: str | None = None,
+                        pr: str | None = None) -> None:
         import uuid
-        cwd = str(Path.home() / "research" / name)
+        if cwd is None:
+            cwd = str(Path.home() / "research" / name)
         Path(cwd).mkdir(parents=True, exist_ok=True)
+        _bootstrap_planning_files(cwd, mode, name, repo=repo, pr=pr)
         with self._lock:
             color = self._next_color()
         s = Session(name=name, cwd=cwd, session_id=str(uuid.uuid4()), color=color)
