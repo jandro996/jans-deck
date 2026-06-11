@@ -466,12 +466,21 @@ class JansApp:
                                   font=("SF Mono", 10), padx=6, pady=6)
             toggle_lbl.pack(side="left")
 
-            tid_lbl = tk.Label(hdr, text=feat.ticket_id,
+            display_name = feat.nickname if feat.nickname else feat.ticket_id
+            tid_lbl = tk.Label(hdr, text=display_name,
                                bg=BG_SURFACE, fg=FG,
                                font=("SF Pro Text", 11, "bold"), pady=6)
             tid_lbl.pack(side="left")
 
-            desc_lbl = tk.Label(hdr, text=f"  {feat.description}",
+            if feat.nickname:
+                ticket_meta = tk.Label(hdr, text=f"  {feat.ticket_id}",
+                                       bg=BG_SURFACE, fg=FG_DIM,
+                                       font=("SF Mono", 9), pady=6)
+                ticket_meta.pack(side="left")
+            else:
+                ticket_meta = None
+
+            desc_lbl = tk.Label(hdr, text=f"  {feat.description}" if feat.description else "",
                                 bg=BG_SURFACE, fg=FG_DIM,
                                 font=("SF Pro Text", 10), pady=6)
             desc_lbl.pack(side="left")
@@ -485,7 +494,10 @@ class JansApp:
                                  font=("SF Pro Text", 10), padx=8, pady=6)
             count_lbl.pack(side="right")
 
-            for w in (hdr, toggle_lbl, tid_lbl, desc_lbl, count_lbl):
+            toggle_targets = [hdr, toggle_lbl, tid_lbl, desc_lbl, count_lbl]
+            if ticket_meta:
+                toggle_targets.append(ticket_meta)
+            for w in toggle_targets:
                 w.bind("<Button-1>", lambda e, t=feat.ticket_id: self._toggle_feature(t))
 
             tk.Frame(frame, bg=BG, height=1).pack(fill="x")
@@ -557,11 +569,13 @@ class JansApp:
                                         parent=self._root)
         if not ticket or not ticket.strip():
             return
-        description = simpledialog.askstring("New feature", "Description:",
-                                             parent=self._root)
-        if description is None:
+        nickname = simpledialog.askstring("New feature", "Nickname (short display name):",
+                                          parent=self._root)
+        if nickname is None:
             return
-        create_feature(ticket.strip(), description.strip())
+        description = simpledialog.askstring("New feature", "Description (optional):",
+                                             parent=self._root)
+        create_feature(ticket.strip(), nickname.strip(), (description or "").strip())
         self._features = load_features()
         self._features_expanded.add(ticket.strip())
         self._switch_tab("features")
@@ -955,10 +969,11 @@ class JansApp:
             return {"ok": True}
         elif action == "new-feature":
             ticket = cmd.get("ticket")
+            nickname = cmd.get("nickname", "")
             description = cmd.get("description", "")
             if not ticket:
                 return {"error": "ticket required"}
-            create_feature(ticket, description)
+            create_feature(ticket, nickname, description)
             self._features = load_features()
             self._features_expanded.add(ticket)
             self._root.after(0, lambda: (self._switch_tab("features"), self._render_sessions()))

@@ -9,6 +9,7 @@ FEATURES_DIR = Path.home() / ".claude" / "knowledge" / "_meta" / "features"
 @dataclass
 class Feature:
     ticket_id: str
+    nickname: str
     description: str
     sessions: list[str] = field(default_factory=list)
 
@@ -51,6 +52,7 @@ def load_features() -> list[Feature]:
                 sessions = []
             features.append(Feature(
                 ticket_id=data.get("ticket", path.stem),
+                nickname=data.get("nickname", ""),
                 description=data.get("description", ""),
                 sessions=sessions,
             ))
@@ -59,17 +61,19 @@ def load_features() -> list[Feature]:
     return features
 
 
-def create_feature(ticket_id: str, description: str) -> Path:
+def create_feature(ticket_id: str, nickname: str, description: str) -> Path:
     FEATURES_DIR.mkdir(parents=True, exist_ok=True)
     path = FEATURES_DIR / f"{ticket_id}.md"
     if not path.exists():
+        title = nickname or ticket_id
         path.write_text(
             f"---\n"
             f"ticket: {ticket_id}\n"
+            f"nickname: {nickname}\n"
             f"description: {description}\n"
             f"sessions: []\n"
             f"---\n\n"
-            f"# Feature: {ticket_id}\n\n"
+            f"# Feature: {title}\n\n"
             f"{description}\n"
         )
     return path
