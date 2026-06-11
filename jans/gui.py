@@ -151,9 +151,9 @@ def _active_app() -> str:
     return "other"
 
 
-def _open_session(session: Session) -> None:
+def _open_session(session: Session, resume: bool = True) -> None:
     cwd, name = session.cwd, session.name
-    cmd = f"cd '{cwd}' && claude --continue"
+    cmd = f"cd '{cwd}' && claude" + (" --continue" if resume else "")
     terminal = _active_app()
     if terminal == "intellij":
         script = f'''
@@ -595,7 +595,7 @@ class JansApp:
         s = Session(name=name, cwd=cwd, session_id=str(uuid.uuid4()), color=color)
         with self._lock:
             self._sessions.append(s)
-        _open_session(s)
+        _open_session(s, resume=False)
         self._render_sessions()
 
     def _execute_command(self, cmd: dict) -> dict:
@@ -669,7 +669,7 @@ class JansApp:
             s = Session(name="jans", cwd=_JANS_CWD, session_id=str(uuid.uuid4()))
             with self._lock:
                 self._sessions.append(s)
-            _open_session(s)
+            _open_session(s, resume=False)
 
     def _focus_poll(self) -> None:
         iterm_front = _active_app() == "iterm2"
