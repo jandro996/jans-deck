@@ -662,9 +662,37 @@ class JansApp:
             self._create_session("research", name.strip())
 
     def _new_task(self) -> None:
-        name = simpledialog.askstring("New task session", "Name:", parent=self._root)
+        repo = simpledialog.askstring("New task session", "Repo (e.g. dd-trace-java):",
+                                      parent=self._root)
+        if not repo or not repo.strip():
+            return
+        name = simpledialog.askstring("New task session", "Branch / task name:",
+                                      parent=self._root)
         if name and name.strip():
-            self._create_session("task", name.strip())
+            self._create_task_session(repo.strip(), name.strip())
+
+    def _create_task_session(self, repo: str, name: str) -> None:
+        import uuid
+        cwd = str(_TASKS_DIR / f"{repo}-{name}")
+        Path(cwd).mkdir(parents=True, exist_ok=True)
+        _bootstrap_planning_files(cwd, "task", name)
+
+        main_repo = _TASKS_DIR / repo
+        if main_repo.exists():
+            subprocess.run(
+                ["git", "-C", str(main_repo), "worktree", "add", cwd, "-b", name],
+                capture_output=True,
+            )
+
+        with self._lock:
+            color = self._next_color()
+        s = Session(name=f"{repo}-{name}", cwd=cwd,
+                    session_id=str(uuid.uuid4()), color=color, kind="tasks")
+        with self._lock:
+            self._sessions.append(s)
+        _open_session(s, resume=False)
+        self._switch_tab("tasks")
+        self._render_sessions()
 
     def _new_tool(self) -> None:
         name = simpledialog.askstring("New tool session", "Name:", parent=self._root)
@@ -755,11 +783,18 @@ class JansApp:
         action = cmd.get("action", "")
         if action == "list":
             return {"sessions": [{"name": s.name, "state": s.state.value} for s in self._sessions]}
-        elif action in ("new-research", "new-task", "new-tool"):
+        elif action in ("new-research", "new-tool"):
             mode = action.replace("new-", "")
             name = cmd.get("name", "session")
             cwd = str(_TOOLS_DIR / name) if mode == "tool" else None
             self._root.after(0, lambda m=mode, n=name, c=cwd: self._create_session(m, n, cwd=c))
+            return {"ok": True}
+        elif action == "new-task":
+            repo = cmd.get("repo")
+            name = cmd.get("name")
+            if not repo or not name:
+                return {"error": "repo and name required"}
+            self._root.after(0, lambda r=repo, n=name: self._create_task_session(r, n))
             return {"ok": True}
         elif action == "new-review":
             url = cmd.get("url", "")

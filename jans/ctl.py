@@ -15,7 +15,7 @@ def usage():
 Commands:
   list                        List all sessions and their states
   new-research <name>         Create a new research session in ~/research/<name>/
-  new-task <name>             Create a new task session
+  new-task <repo> <name>      Create a task worktree in ~/IdeaProjects/<repo>-<name>/
   new-tool <name>             Create a new tooling session in ~/tools/<name>/
   new-review <url>            Create a review session from a GitHub PR URL
   load <path> [name]          Load an existing directory as a session
@@ -45,10 +45,10 @@ def main():
             sys.exit(1)
         result = send_command("new-research", name=rest[0])
     elif cmd == "new-task":
-        if not rest:
-            print("Error: name required", file=sys.stderr)
+        if len(rest) < 2:
+            print("Error: repo and name required", file=sys.stderr)
             sys.exit(1)
-        result = send_command("new-task", name=rest[0])
+        result = send_command("new-task", repo=rest[0], name=rest[1])
     elif cmd == "new-tool":
         if not rest:
             print("Error: name required", file=sys.stderr)
