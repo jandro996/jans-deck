@@ -430,7 +430,7 @@ class JansApp:
         self._new_btn.configure(text=label, command=getattr(self, method))
         if name == "features":
             self._load_btn.pack_forget()
-        else:
+        elif not self._load_btn.winfo_manager():
             self._load_btn.pack(side="left", padx=3, pady=2)
 
     def _add_section_header(self, label: str, frame: tk.Frame) -> None:
@@ -527,7 +527,7 @@ class JansApp:
 
     def _add_feature_session_row(self, parent: tk.Frame,
                                   name: str, session: "Session | None") -> None:
-        row = tk.Frame(parent, bg=BG, cursor="hand2" if session else "arrow")
+        row = tk.Frame(parent, bg=BG, cursor="hand2")
         row.pack(fill="x", padx=(24, 0))
 
         if session:
@@ -544,13 +544,20 @@ class JansApp:
         name_lbl = tk.Label(row, text=name, bg=BG, fg=fg,
                             font=("SF Pro Text", 11))
         name_lbl.pack(side="left")
-        age_lbl = tk.Label(row, text=age, bg=BG, fg=FG_DIM,
-                           font=("SF Pro Text", 9))
-        age_lbl.pack(side="right", padx=8)
+
+        if not session:
+            load_btn = tk.Label(row, text="⤴ load", bg=BG, fg=BLUE,
+                                font=("SF Pro Text", 9), cursor="hand2", padx=6)
+            load_btn.pack(side="right", pady=3)
+            load_btn.bind("<Button-1>", lambda e, n=name: self._load_linked_session(n))
+        else:
+            age_lbl = tk.Label(row, text=age, bg=BG, fg=FG_DIM,
+                               font=("SF Pro Text", 9))
+            age_lbl.pack(side="right", padx=8)
+
+        hw = [row, icon_lbl, name_lbl]
 
         if session:
-            hw = [row, icon_lbl, name_lbl, age_lbl]
-
             def on_click(e, s=session):
                 claude = find_claude_session_for_cwd(s.cwd)
                 if claude and claude[1]:
@@ -562,10 +569,28 @@ class JansApp:
 
             for w in hw:
                 w.bind("<Button-1>", on_click)
-                w.bind("<Enter>", lambda e, ww=hw: [x.configure(bg=BG_HOVER) for x in ww])
-                w.bind("<Leave>", lambda e, ww=hw: [x.configure(bg=BG) for x in ww])
+
+        for w in hw:
+            w.bind("<Enter>", lambda e, ww=hw: [x.configure(bg=BG_HOVER) for x in ww])
+            w.bind("<Leave>", lambda e, ww=hw: [x.configure(bg=BG) for x in ww])
 
         tk.Frame(parent, bg=BG_SURFACE, height=1).pack(fill="x", padx=(24, 0))
+
+    def _load_linked_session(self, name: str) -> None:
+        from tkinter import filedialog
+        import uuid
+        path = filedialog.askdirectory(title=f"Select directory for '{name}'",
+                                       parent=self._root)
+        if not path:
+            return
+        with self._lock:
+            color = self._next_color()
+        s = Session(name=name, cwd=path, session_id=str(uuid.uuid4()), color=color,
+                    kind=_session_kind(Session(name=name, cwd=path, session_id="")))
+        with self._lock:
+            self._sessions.append(s)
+        _open_session(s, resume=True)
+        self._render_sessions()
 
     def _toggle_feature(self, ticket_id: str) -> None:
         if ticket_id in self._features_expanded:
