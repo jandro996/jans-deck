@@ -15,8 +15,10 @@ def usage():
 Commands:
   list                        List all sessions and their states
   new-research <name>         Create a new research session in ~/research/<name>/
-  new-task <repo> <name>      Create a task worktree in ~/IdeaProjects/<repo>-<name>/
+  new-task <repo> <name> [ticket]  Create a task worktree, optionally linked to a feature
   new-tool <name>             Create a new tooling session in ~/tools/<name>/
+  new-feature <ticket> <desc> Create a feature manifest in ~/.claude/knowledge/_meta/features/
+  feature-status <ticket>     Show sessions linked to a feature and their states
   new-review <url>            Create a review session from a GitHub PR URL
   load <path> [name]          Load an existing directory as a session
   rename <current> <new>      Rename a session
@@ -48,7 +50,18 @@ def main():
         if len(rest) < 2:
             print("Error: repo and name required", file=sys.stderr)
             sys.exit(1)
-        result = send_command("new-task", repo=rest[0], name=rest[1])
+        ticket = rest[2] if len(rest) > 2 else None
+        result = send_command("new-task", repo=rest[0], name=rest[1], ticket=ticket)
+    elif cmd == "new-feature":
+        if len(rest) < 2:
+            print("Error: ticket and description required", file=sys.stderr)
+            sys.exit(1)
+        result = send_command("new-feature", ticket=rest[0], description=" ".join(rest[1:]))
+    elif cmd == "feature-status":
+        if not rest:
+            print("Error: ticket required", file=sys.stderr)
+            sys.exit(1)
+        result = send_command("feature-status", ticket=rest[0])
     elif cmd == "new-tool":
         if not rest:
             print("Error: name required", file=sys.stderr)

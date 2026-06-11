@@ -7,6 +7,7 @@ from pathlib import Path
 from tkinter import simpledialog, ttk
 
 from jans.core.commands import read_pending_command, write_result
+from jans.core.features import Feature, create_feature, link_session, load_features
 from jans.core.log import log
 from jans.core.persistence import load_saved_sessions, save_sessions
 from jans.core.state_detector import detect_state, find_claude_session_for_cwd
@@ -57,10 +58,11 @@ _TOOLS_DIR   = Path.home() / "tools"
 _REVIEWS_DIR = Path.home() / "reviews"
 _TASKS_DIR   = Path.home() / "IdeaProjects"
 
-_TABS = ("research", "tasks", "tools", "reviews")
+_SESSION_TABS = ("research", "tasks", "tools", "reviews")
+_ALL_TABS     = ("features",) + _SESSION_TABS
 
 
-def _session_kind(s: "Session") -> str:
+def _session_kind(s: "Session") -> str:  # returns one of _SESSION_TABS
     """Classify a session into one of the four tabs."""
     if s.kind:
         return s.kind
@@ -305,6 +307,8 @@ end tell'''
 class JansApp:
     def __init__(self):
         self._sessions: list[Session] = load_saved_sessions()
+        self._features: list[Feature] = load_features()
+        self._features_expanded: set[str] = set()
         self._lock = threading.Lock()
         self._tab_colors_applied: dict[str, str] = {}   # name -> color applied
         self._badge_applied: set[str] = set()           # names with badge set
@@ -353,6 +357,7 @@ class JansApp:
         toolbar = tk.Frame(self._root, bg=BG_SURFACE, pady=5)
         toolbar.pack(fill="x", side="bottom")
         for text, cmd in [
+            ("＋ Feature",  self._new_feature),
             ("＋ Research", self._new_research),
             ("＋ Task",     self._new_task),
             ("＋ Tool",     self._new_tool),
@@ -378,7 +383,7 @@ class JansApp:
         content_area = tk.Frame(self._root, bg=BG)
         content_area.pack(fill="both", expand=True)
 
-        for tab_name in _TABS:
+        for tab_name in _ALL_TABS:
             lbl = tk.Label(tab_bar, text=tab_name.capitalize(),
                            bg=BG_SURFACE, fg=FG_DIM,
                            font=("SF Pro Text", 10), padx=12, pady=5,
@@ -403,7 +408,7 @@ class JansApp:
             self._tab_containers[tab_name] = container
             self._tab_frames[tab_name] = inner
 
-        self._switch_tab("research")
+        self._switch_tab("features")
 
     def _switch_tab(self, name: str) -> None:
         self._active_tab = name
@@ -428,12 +433,149 @@ class JansApp:
 
     _INACTIVE = {SessionState.PAUSED, SessionState.TERMINATED}
 
+    # ── Features tab ─────────────────────────────────────────────
+
+    def _render_features_tab(self) -> None:
+        frame = self._tab_frames["features"]
+        for w in frame.winfo_children():
+            w.destroy()
+
+        features = self._features
+        with self._lock:
+            sessions_by_name = {s.name: s for s in self._sessions}
+
+        # Update features tab button
+        btn = self._tab_buttons["features"]
+        is_active = (self._active_tab == "features")
+        btn.configure(text="Features",
+                      font=("SF Pro Text", 10, "bold") if is_active else ("SF Pro Text", 10))
+
+        if not features:
+            tk.Label(frame, text="No features yet",
+                     bg=BG, fg=FG_DIM, font=("SF Pro Text", 12), pady=20).pack()
+            return
+
+        for feat in features:
+            expanded = feat.ticket_id in self._features_expanded
+            # Header row
+            hdr = tk.Frame(frame, bg=BG_SURFACE, cursor="hand2")
+            hdr.pack(fill="x")
+
+            toggle_lbl = tk.Label(hdr, text="▼ " if expanded else "▶ ",
+                                  bg=BG_SURFACE, fg=ORANGE,
+                                  font=("SF Mono", 10), padx=6, pady=6)
+            toggle_lbl.pack(side="left")
+
+            tid_lbl = tk.Label(hdr, text=feat.ticket_id,
+                               bg=BG_SURFACE, fg=FG,
+                               font=("SF Pro Text", 11, "bold"), pady=6)
+            tid_lbl.pack(side="left")
+
+            desc_lbl = tk.Label(hdr, text=f"  {feat.description}",
+                                bg=BG_SURFACE, fg=FG_DIM,
+                                font=("SF Pro Text", 10), pady=6)
+            desc_lbl.pack(side="left")
+
+            n_active = sum(1 for sn in feat.sessions
+                           if sn in sessions_by_name
+                           and sessions_by_name[sn].state not in self._INACTIVE)
+            count_lbl = tk.Label(hdr,
+                                 text=f"{n_active}/{len(feat.sessions)}" if feat.sessions else "0",
+                                 bg=BG_SURFACE, fg=FG_DIM,
+                                 font=("SF Pro Text", 10), padx=8, pady=6)
+            count_lbl.pack(side="right")
+
+            for w in (hdr, toggle_lbl, tid_lbl, desc_lbl, count_lbl):
+                w.bind("<Button-1>", lambda e, t=feat.ticket_id: self._toggle_feature(t))
+
+            tk.Frame(frame, bg=BG, height=1).pack(fill="x")
+
+            if expanded:
+                sess_frame = tk.Frame(frame, bg=BG)
+                sess_frame.pack(fill="x")
+                if not feat.sessions:
+                    tk.Label(sess_frame, text="No sessions linked",
+                             bg=BG, fg=FG_DIM, font=("SF Pro Text", 10),
+                             pady=6, padx=24).pack(anchor="w")
+                else:
+                    for sname in feat.sessions:
+                        self._add_feature_session_row(sess_frame, sname,
+                                                       sessions_by_name.get(sname))
+                tk.Frame(frame, bg=BG_SURFACE, height=1).pack(fill="x")
+
+    def _add_feature_session_row(self, parent: tk.Frame,
+                                  name: str, session: "Session | None") -> None:
+        row = tk.Frame(parent, bg=BG, cursor="hand2" if session else "arrow")
+        row.pack(fill="x", padx=(24, 0))
+
+        if session:
+            color = STATE_COLOR.get(session.state, FG)
+            icon  = STATE_ICON.get(session.state, "?")
+            age   = _age(session)
+            fg    = FG
+        else:
+            color, icon, age, fg = FG_DIM, "·", "—", FG_DIM
+
+        icon_lbl = tk.Label(row, text=f"{icon} ", bg=BG, fg=color,
+                            font=("SF Mono", 10))
+        icon_lbl.pack(side="left", pady=3)
+        name_lbl = tk.Label(row, text=name, bg=BG, fg=fg,
+                            font=("SF Pro Text", 11))
+        name_lbl.pack(side="left")
+        age_lbl = tk.Label(row, text=age, bg=BG, fg=FG_DIM,
+                           font=("SF Pro Text", 9))
+        age_lbl.pack(side="right", padx=8)
+
+        if session:
+            hw = [row, icon_lbl, name_lbl, age_lbl]
+
+            def on_click(e, s=session):
+                claude = find_claude_session_for_cwd(s.cwd)
+                if claude and claude[1]:
+                    tty = _pid_tty(claude[1])
+                    if tty:
+                        _focus_session_by_tty(tty)
+                        return
+                _open_session(s)
+
+            for w in hw:
+                w.bind("<Button-1>", on_click)
+                w.bind("<Enter>", lambda e, ww=hw: [x.configure(bg=BG_HOVER) for x in ww])
+                w.bind("<Leave>", lambda e, ww=hw: [x.configure(bg=BG) for x in ww])
+
+        tk.Frame(parent, bg=BG_SURFACE, height=1).pack(fill="x", padx=(24, 0))
+
+    def _toggle_feature(self, ticket_id: str) -> None:
+        if ticket_id in self._features_expanded:
+            self._features_expanded.discard(ticket_id)
+        else:
+            self._features_expanded.add(ticket_id)
+        self._render_sessions()
+
+    def _new_feature(self) -> None:
+        ticket = simpledialog.askstring("New feature", "Ticket ID (e.g. JIRA-1234):",
+                                        parent=self._root)
+        if not ticket or not ticket.strip():
+            return
+        description = simpledialog.askstring("New feature", "Description:",
+                                             parent=self._root)
+        if description is None:
+            return
+        create_feature(ticket.strip(), description.strip())
+        self._features = load_features()
+        self._features_expanded.add(ticket.strip())
+        self._switch_tab("features")
+        self._render_sessions()
+
     def _render_sessions(self) -> None:
         with self._lock:
             sessions = [s for s in self._sessions if s.cwd != _JANS_CWD]
 
-        # Categorize into tabs
-        by_tab: dict[str, list] = {t: [] for t in _TABS}
+        # Features tab
+        self._render_features_tab()
+
+        # Categorize into session tabs
+        by_tab: dict[str, list] = {t: [] for t in _SESSION_TABS}
         for s in sessions:
             by_tab[_session_kind(s)].append(s)
 
@@ -628,6 +770,7 @@ class JansApp:
 
     def _tick(self) -> None:
         try:
+            self._features = load_features()
             self._refresh()
             with self._lock:
                 save_sessions(self._sessions)
@@ -668,10 +811,16 @@ class JansApp:
             return
         name = simpledialog.askstring("New task session", "Branch / task name:",
                                       parent=self._root)
-        if name and name.strip():
-            self._create_task_session(repo.strip(), name.strip())
+        if not name or not name.strip():
+            return
+        ticket = simpledialog.askstring("New task session",
+                                        "Feature ticket ID (optional, leave empty to skip):",
+                                        parent=self._root)
+        self._create_task_session(repo.strip(), name.strip(),
+                                  ticket.strip() if ticket and ticket.strip() else None)
 
-    def _create_task_session(self, repo: str, name: str) -> None:
+    def _create_task_session(self, repo: str, name: str,
+                             ticket_id: str | None = None) -> None:
         import uuid
         cwd = str(_TASKS_DIR / f"{repo}-{name}")
         Path(cwd).mkdir(parents=True, exist_ok=True)
@@ -686,10 +835,16 @@ class JansApp:
 
         with self._lock:
             color = self._next_color()
-        s = Session(name=f"{repo}-{name}", cwd=cwd,
+        session_name = f"{repo}-{name}"
+        s = Session(name=session_name, cwd=cwd,
                     session_id=str(uuid.uuid4()), color=color, kind="tasks")
         with self._lock:
             self._sessions.append(s)
+
+        if ticket_id:
+            link_session(ticket_id, session_name)
+            self._features = load_features()
+
         _open_session(s, resume=False)
         self._switch_tab("tasks")
         self._render_sessions()
@@ -794,7 +949,19 @@ class JansApp:
             name = cmd.get("name")
             if not repo or not name:
                 return {"error": "repo and name required"}
-            self._root.after(0, lambda r=repo, n=name: self._create_task_session(r, n))
+            ticket = cmd.get("ticket")
+            self._root.after(0, lambda r=repo, n=name, t=ticket:
+                             self._create_task_session(r, n, t))
+            return {"ok": True}
+        elif action == "new-feature":
+            ticket = cmd.get("ticket")
+            description = cmd.get("description", "")
+            if not ticket:
+                return {"error": "ticket required"}
+            create_feature(ticket, description)
+            self._features = load_features()
+            self._features_expanded.add(ticket)
+            self._root.after(0, lambda: (self._switch_tab("features"), self._render_sessions()))
             return {"ok": True}
         elif action == "new-review":
             url = cmd.get("url", "")
@@ -846,6 +1013,26 @@ class JansApp:
                 self._root.after(0, lambda k=kind: self._switch_tab(k))
             self._root.after(0, self._render_sessions)
             return {"ok": True}
+        elif action == "feature-status":
+            ticket = cmd.get("ticket")
+            if not ticket:
+                return {"error": "ticket required"}
+            feat = next((f for f in self._features if f.ticket_id == ticket), None)
+            if not feat:
+                return {"error": f"feature not found: {ticket}"}
+            with self._lock:
+                sessions_by_name = {s.name: s for s in self._sessions}
+            return {
+                "ticket": feat.ticket_id,
+                "description": feat.description,
+                "sessions": [
+                    {
+                        "name": sn,
+                        "state": sessions_by_name[sn].state.value if sn in sessions_by_name else "not_loaded",
+                    }
+                    for sn in feat.sessions
+                ],
+            }
         return {"error": f"unknown: {action}"}
 
     def _open_jans_session(self) -> None:
