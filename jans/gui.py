@@ -356,19 +356,14 @@ class JansApp:
         # Toolbar (bottom, packed before content so it doesn't get pushed off)
         toolbar = tk.Frame(self._root, bg=BG_SURFACE, pady=5)
         toolbar.pack(fill="x", side="bottom")
-        for text, cmd in [
-            ("＋ Feature",  self._new_feature),
-            ("＋ Research", self._new_research),
-            ("＋ Task",     self._new_task),
-            ("＋ Tool",     self._new_tool),
-            ("＋ Review",   self._new_review),
-            ("⤴ Load",     self._load_dir),
-        ]:
-            tk.Button(toolbar, text=text, command=cmd,
-                      bg=BG_HOVER, fg=FG, relief="flat",
+
+        btn_kw = dict(bg=BG_HOVER, fg=FG, relief="flat",
                       font=("SF Pro Text", 10), padx=7, pady=3,
-                      cursor="hand2", activebackground=PURPLE,
-                      activeforeground=BG).pack(side="left", padx=3, pady=2)
+                      cursor="hand2", activebackground=PURPLE, activeforeground=BG)
+        self._new_btn  = tk.Button(toolbar, text="＋", **btn_kw)
+        self._load_btn = tk.Button(toolbar, text="⤴ Load", command=self._load_dir, **btn_kw)
+        self._new_btn.pack(side="left", padx=3, pady=2)
+        self._load_btn.pack(side="left", padx=3, pady=2)
 
         # Tab bar
         tab_bar = tk.Frame(self._root, bg=BG_SURFACE)
@@ -410,6 +405,14 @@ class JansApp:
 
         self._switch_tab("features")
 
+    _TAB_NEW_ACTION = {
+        "features": ("＋ Feature",  "_new_feature"),
+        "research": ("＋ Research", "_new_research"),
+        "tasks":    ("＋ Task",     "_new_task"),
+        "tools":    ("＋ Tool",     "_new_tool"),
+        "reviews":  ("＋ Review",   "_new_review"),
+    }
+
     def _switch_tab(self, name: str) -> None:
         self._active_tab = name
         for t, container in self._tab_containers.items():
@@ -422,6 +425,13 @@ class JansApp:
                 btn.configure(bg=BG, fg=FG, font=("SF Pro Text", 10, "bold"))
             else:
                 btn.configure(bg=BG_SURFACE, fg=FG_DIM, font=("SF Pro Text", 10))
+
+        label, method = self._TAB_NEW_ACTION.get(name, ("＋ New", "_new_research"))
+        self._new_btn.configure(text=label, command=getattr(self, method))
+        if name == "features":
+            self._load_btn.pack_forget()
+        else:
+            self._load_btn.pack(side="left", padx=3, pady=2)
 
     def _add_section_header(self, label: str, frame: tk.Frame) -> None:
         hdr = tk.Frame(frame, bg=BG, pady=3)
