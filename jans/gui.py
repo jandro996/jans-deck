@@ -53,6 +53,7 @@ STATE_ICON = {
 
 _JANS_DIR = Path(__file__).parent.parent
 _JANS_CWD = str(Path.home() / "research" / "jans")
+_TOOLS_DIR = Path.home() / "tools"
 
 
 def _bootstrap_planning_files(
@@ -595,8 +596,11 @@ class JansApp:
         action = cmd.get("action", "")
         if action == "list":
             return {"sessions": [{"name": s.name, "state": s.state.value} for s in self._sessions]}
-        elif action in ("new-research", "new-task"):
-            self._root.after(0, lambda: self._create_session(action.replace("new-", ""), cmd.get("name", "session")))
+        elif action in ("new-research", "new-task", "new-tool"):
+            mode = action.replace("new-", "")
+            name = cmd.get("name", "session")
+            cwd = str(_TOOLS_DIR / name) if mode == "tool" else None
+            self._root.after(0, lambda m=mode, n=name, c=cwd: self._create_session(m, n, cwd=c))
             return {"ok": True}
         elif action == "delete":
             name = cmd.get("name")
