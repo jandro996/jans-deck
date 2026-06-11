@@ -4,7 +4,7 @@ import subprocess
 import threading
 import tkinter as tk
 from pathlib import Path
-from tkinter import simpledialog
+from tkinter import simpledialog, ttk
 
 from jans.core.commands import read_pending_command, write_result
 from jans.core.log import log
@@ -52,9 +52,26 @@ STATE_ICON = {
 }
 
 _JANS_DIR = Path(__file__).parent.parent
-_JANS_CWD = str(Path.home() / "research" / "jans")
+_JANS_CWD    = str(Path.home() / "research" / "jans")
 _TOOLS_DIR   = Path.home() / "tools"
 _REVIEWS_DIR = Path.home() / "reviews"
+_TASKS_DIR   = Path.home() / "IdeaProjects"
+
+_TABS = ("research", "tasks", "tools", "reviews")
+
+
+def _session_kind(s: "Session") -> str:
+    """Classify a session into one of the four tabs."""
+    if s.kind:
+        return s.kind
+    cwd = s.cwd
+    if cwd.startswith(str(_REVIEWS_DIR)):
+        return "reviews"
+    if cwd.startswith(str(_TOOLS_DIR)):
+        return "tools"
+    if cwd.startswith(str(_TASKS_DIR)):
+        return "tasks"
+    return "research"
 
 
 def _parse_github_pr_url(url: str) -> tuple[str, str, str] | None:
@@ -332,25 +349,7 @@ class JansApp:
                  bg=BG_SURFACE, fg=FG_DIM, font=("SF Mono", 10),
                  anchor="w", padx=10, pady=3).pack(fill="x")
 
-        # Session list (scrollable)
-        container = tk.Frame(self._root, bg=BG)
-        container.pack(fill="both", expand=True)
-
-        canvas = tk.Canvas(container, bg=BG, highlightthickness=0)
-        scrollbar = tk.Scrollbar(container, orient="vertical", command=canvas.yview)
-        self._session_frame = tk.Frame(canvas, bg=BG)
-
-        self._session_frame.bind("<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.create_window((0, 0), window=self._session_frame, anchor="nw", tags="inner")
-        canvas.bind("<Configure>",
-            lambda e: canvas.itemconfig("inner", width=e.width))
-        canvas.configure(yscrollcommand=scrollbar.set)
-
-        scrollbar.pack(side="right", fill="y")
-        canvas.pack(side="left", fill="both", expand=True)
-
-        # Toolbar
+        # Toolbar (bottom, packed before content so it doesn't get pushed off)
         toolbar = tk.Frame(self._root, bg=BG_SURFACE, pady=5)
         toolbar.pack(fill="x", side="bottom")
         for text, cmd in [
@@ -366,50 +365,119 @@ class JansApp:
                       cursor="hand2", activebackground=PURPLE,
                       activeforeground=BG).pack(side="left", padx=3, pady=2)
 
-    def _add_section_header(self, label: str) -> None:
-        hdr = tk.Frame(self._session_frame, bg=BG, pady=3)
+        # Tab bar
+        tab_bar = tk.Frame(self._root, bg=BG_SURFACE)
+        tab_bar.pack(fill="x")
+
+        self._active_tab: str = "research"
+        self._tab_buttons: dict[str, tk.Label] = {}
+        self._tab_containers: dict[str, tk.Frame] = {}
+        self._tab_frames: dict[str, tk.Frame] = {}
+
+        # Content area (fills remaining space)
+        content_area = tk.Frame(self._root, bg=BG)
+        content_area.pack(fill="both", expand=True)
+
+        for tab_name in _TABS:
+            lbl = tk.Label(tab_bar, text=tab_name.capitalize(),
+                           bg=BG_SURFACE, fg=FG_DIM,
+                           font=("SF Pro Text", 10), padx=12, pady=5,
+                           cursor="hand2")
+            lbl.pack(side="left")
+            lbl.bind("<Button-1>", lambda e, t=tab_name: self._switch_tab(t))
+            self._tab_buttons[tab_name] = lbl
+
+            container = tk.Frame(content_area, bg=BG)
+            canvas = tk.Canvas(container, bg=BG, highlightthickness=0)
+            scrollbar = tk.Scrollbar(container, orient="vertical", command=canvas.yview)
+            inner = tk.Frame(canvas, bg=BG)
+            inner.bind("<Configure>",
+                lambda e, c=canvas: c.configure(scrollregion=c.bbox("all")))
+            canvas.create_window((0, 0), window=inner, anchor="nw", tags="inner")
+            canvas.bind("<Configure>",
+                lambda e, c=canvas: c.itemconfig("inner", width=e.width))
+            canvas.configure(yscrollcommand=scrollbar.set)
+            scrollbar.pack(side="right", fill="y")
+            canvas.pack(side="left", fill="both", expand=True)
+
+            self._tab_containers[tab_name] = container
+            self._tab_frames[tab_name] = inner
+
+        self._switch_tab("research")
+
+    def _switch_tab(self, name: str) -> None:
+        self._active_tab = name
+        for t, container in self._tab_containers.items():
+            if t == name:
+                container.pack(fill="both", expand=True)
+            else:
+                container.pack_forget()
+        for t, btn in self._tab_buttons.items():
+            if t == name:
+                btn.configure(bg=BG, fg=FG, font=("SF Pro Text", 10, "bold"))
+            else:
+                btn.configure(bg=BG_SURFACE, fg=FG_DIM, font=("SF Pro Text", 10))
+
+    def _add_section_header(self, label: str, frame: tk.Frame) -> None:
+        hdr = tk.Frame(frame, bg=BG, pady=3)
         hdr.pack(fill="x", padx=10, pady=(4, 0))
         tk.Frame(hdr, bg=BG_SURFACE, height=1).pack(side="left", fill="x", expand=True, pady=5)
         tk.Label(hdr, text=f"  {label}  ", bg=BG, fg=FG_DIM,
                  font=("SF Pro Text", 9)).pack(side="left")
         tk.Frame(hdr, bg=BG_SURFACE, height=1).pack(side="left", fill="x", expand=True, pady=5)
 
-    def _render_sessions(self) -> None:
-        for w in self._session_frame.winfo_children():
-            w.destroy()
+    _INACTIVE = {SessionState.PAUSED, SessionState.TERMINATED}
 
+    def _render_sessions(self) -> None:
         with self._lock:
             sessions = [s for s in self._sessions if s.cwd != _JANS_CWD]
 
-        paused  = [s for s in sessions if s.state == SessionState.PAUSED]
-        active  = [s for s in sessions if s.state != SessionState.PAUSED]
+        # Categorize into tabs
+        by_tab: dict[str, list] = {t: [] for t in _TABS}
+        for s in sessions:
+            by_tab[_session_kind(s)].append(s)
 
-        if paused:
-            self._add_section_header("paused")
-            for s in paused:
-                self._add_session_row(s)
+        for tab_name, tab_sessions in by_tab.items():
+            frame = self._tab_frames[tab_name]
+            for w in frame.winfo_children():
+                w.destroy()
 
-        if active:
-            self._add_section_header("active")
+            active   = [s for s in tab_sessions if s.state not in self._INACTIVE]
+            inactive = [s for s in tab_sessions if s.state in self._INACTIVE]
+
             for s in active:
-                self._add_session_row(s)
+                self._add_session_row(s, frame)
+            if inactive:
+                self._add_section_header("paused", frame)
+                for s in inactive:
+                    self._add_session_row(s, frame)
 
-        if not sessions:
-            tk.Label(self._session_frame, text="No sessions yet",
-                     bg=BG, fg=FG_DIM, font=("SF Pro Text", 12),
-                     pady=20).pack()
+            if not tab_sessions:
+                tk.Label(frame, text="No sessions",
+                         bg=BG, fg=FG_DIM, font=("SF Pro Text", 12),
+                         pady=20).pack()
 
-        # Status bar
+            # Update tab button label with active count badge
+            active_count = len(active)
+            label = tab_name.capitalize()
+            if active_count:
+                label += f"  {active_count}"
+            btn = self._tab_buttons[tab_name]
+            is_active_tab = (tab_name == self._active_tab)
+            btn.configure(text=label,
+                          font=("SF Pro Text", 10, "bold") if is_active_tab else ("SF Pro Text", 10))
+
+        # Status bar (global counts)
         ni = sum(1 for s in sessions if s.state == SessionState.NEEDS_INPUT)
         wt = sum(1 for s in sessions if s.state == SessionState.WAITING)
         pr = sum(1 for s in sessions if s.state == SessionState.PROCESSING)
         parts = []
-        if ni: parts.append(f"⚡ {ni} needs input")
-        if wt: parts.append(f"● {wt} waiting")
-        if pr: parts.append(f"▶ {pr} processing")
-        self._status_var.set("  " + "   ".join(parts) if parts else "  all paused")
+        if ni: parts.append(f"⚡ {ni}")
+        if wt: parts.append(f"● {wt}")
+        if pr: parts.append(f"▶ {pr}")
+        self._status_var.set("  " + "  ".join(parts) if parts else "  all paused")
 
-    def _add_session_row(self, session: Session) -> None:
+    def _add_session_row(self, session: Session, frame: tk.Frame) -> None:
         color = STATE_COLOR.get(session.state, FG)
         icon  = STATE_ICON.get(session.state, "?")
         name  = session.name if len(session.name) <= 22 else "…" + session.name[-21:]
@@ -417,7 +485,7 @@ class JansApp:
         age   = _age(session)
 
         # Outer wrapper (full width, no horizontal padding so border touches edge)
-        row = tk.Frame(self._session_frame, bg=BG, cursor="hand2")
+        row = tk.Frame(frame, bg=BG, cursor="hand2")
         row.pack(fill="x", pady=0)
 
         # Left color accent
@@ -451,7 +519,7 @@ class JansApp:
         cwd_lbl.pack(fill="x")
 
         # Bottom separator
-        tk.Frame(self._session_frame, bg=BG_SURFACE, height=1).pack(fill="x")
+        tk.Frame(frame, bg=BG_SURFACE, height=1).pack(fill="x")
 
         # Hover: propagate bg to all content widgets (not the accent border)
         hover_widgets = [row, content, top, icon_lbl, name_lbl, age_lbl, cwd_lbl]
@@ -634,7 +702,7 @@ class JansApp:
 
         with self._lock:
             color = self._next_color()
-        s = Session(name=name, cwd=cwd, session_id=str(uuid.uuid4()), color=color)
+        s = Session(name=name, cwd=cwd, session_id=str(uuid.uuid4()), color=color, kind="reviews")
         with self._lock:
             self._sessions.append(s)
         _open_session(s, resume=False)
@@ -673,7 +741,8 @@ class JansApp:
         _bootstrap_planning_files(cwd, mode, name, repo=repo, pr=pr)
         with self._lock:
             color = self._next_color()
-        s = Session(name=name, cwd=cwd, session_id=str(uuid.uuid4()), color=color)
+        kind = "tasks" if mode == "task" else (mode + "s" if not mode.endswith("s") else mode)
+        s = Session(name=name, cwd=cwd, session_id=str(uuid.uuid4()), color=color, kind=kind)
         with self._lock:
             self._sessions.append(s)
         _open_session(s, resume=False)
