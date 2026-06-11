@@ -342,6 +342,7 @@ class JansApp:
         for text, cmd in [
             ("＋ Research", self._new_research),
             ("＋ Task",     self._new_task),
+            ("＋ Tool",     self._new_tool),
             ("⤴ Load",     self._load_dir),
         ]:
             tk.Button(toolbar, text=text, command=cmd,
@@ -552,6 +553,11 @@ class JansApp:
         name = simpledialog.askstring("New task session", "Name:", parent=self._root)
         if name and name.strip():
             self._create_session("task", name.strip())
+
+    def _new_tool(self) -> None:
+        name = simpledialog.askstring("New tool session", "Name:", parent=self._root)
+        if name and name.strip():
+            self._create_session("tool", name.strip(), cwd=str(_TOOLS_DIR / name.strip()))
 
     def _load_dir(self) -> None:
         from tkinter import filedialog
