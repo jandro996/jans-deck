@@ -465,10 +465,20 @@ class JansApp:
                         return
                 _open_session(s)
 
+        def on_right_click(e, s=session):
+            menu = tk.Menu(self._root, tearoff=0, bg=BG_SURFACE, fg=FG,
+                           activebackground=RED, activeforeground=BG,
+                           font=("SF Pro Text", 11), bd=0)
+            menu.add_command(label=f"Delete \"{s.name}\"",
+                             command=lambda: self._confirm_delete(s))
+            menu.tk_popup(e.x_root, e.y_root)
+
         for widget in hover_widgets:
             widget.bind("<Enter>", on_enter)
             widget.bind("<Leave>", on_leave)
             widget.bind("<Button-1>", on_click)
+            widget.bind("<Button-2>", on_right_click)
+            widget.bind("<Button-3>", on_right_click)
 
     # ── Refresh ───────────────────────────────────────────────
 
@@ -543,6 +553,25 @@ class JansApp:
         self._root.after(3000, self._tick)
 
     # ── Actions ───────────────────────────────────────────────
+
+    def _confirm_delete(self, session: Session) -> None:
+        import shutil
+        from tkinter import messagebox
+        ok = messagebox.askyesno(
+            "Delete session",
+            f"Delete \"{session.name}\"?\n\n{session.cwd}\n\nThe directory will be removed from disk.",
+            icon="warning",
+            parent=self._root,
+        )
+        if ok:
+            with self._lock:
+                self._sessions = [s for s in self._sessions if s.session_id != session.session_id]
+            try:
+                shutil.rmtree(session.cwd)
+            except Exception as e:
+                from tkinter import messagebox as mb
+                mb.showerror("Error", f"Could not remove directory:\n{e}", parent=self._root)
+            self._render_sessions()
 
     def _new_research(self) -> None:
         name = simpledialog.askstring("New research session", "Name:", parent=self._root)
