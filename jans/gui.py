@@ -544,35 +544,62 @@ class JansApp:
 
     def _add_feature_session_row(self, parent: tk.Frame,
                                   name: str, session: "Session | None") -> None:
+        # Outer wrapper (accent + content, matching _add_session_row layout)
         row = tk.Frame(parent, bg=BG, cursor="hand2")
-        row.pack(fill="x", padx=(24, 0))
+        row.pack(fill="x", padx=(20, 0))
 
         if session:
-            color = STATE_COLOR.get(session.state, FG)
-            icon  = STATE_ICON.get(session.state, "?")
-            age   = _age(session)
-            fg    = FG
+            state_color = STATE_COLOR.get(session.state, FG)
+            icon = STATE_ICON.get(session.state, "?")
+            age  = _age(session)
         else:
-            color, icon, age, fg = FG_DIM, "·", "—", FG_DIM
+            state_color, icon, age = FG_DIM, "·", "—"
 
-        icon_lbl = tk.Label(row, text=f"{icon} ", bg=BG, fg=color,
+        # Left color accent (same 3px strip as main session rows)
+        accent = tk.Frame(row, bg=state_color, width=3)
+        accent.pack(side="left", fill="y")
+
+        content = tk.Frame(row, bg=BG)
+        content.pack(side="left", fill="both", expand=True, padx=(8, 6), pady=3)
+
+        top = tk.Frame(content, bg=BG)
+        top.pack(fill="x")
+
+        icon_lbl = tk.Label(top, text=f"{icon} ", bg=BG, fg=state_color,
                             font=("SF Mono", 10))
-        icon_lbl.pack(side="left", pady=3)
-        name_lbl = tk.Label(row, text=name, bg=BG, fg=fg,
-                            font=("SF Pro Text", 11))
+        icon_lbl.pack(side="left")
+
+        name_lbl = tk.Label(top, text=name, bg=BG,
+                            fg=FG if session else FG_DIM,
+                            font=("SF Pro Text", 11, "bold"))
         name_lbl.pack(side="left")
 
-        if not session:
-            load_btn = tk.Label(row, text="⤴ load", bg=BG, fg=BLUE,
-                                font=("SF Pro Text", 9), cursor="hand2", padx=6)
-            load_btn.pack(side="right", pady=3)
-            load_btn.bind("<Button-1>", lambda e, n=name: self._load_linked_session(n))
-        else:
-            age_lbl = tk.Label(row, text=age, bg=BG, fg=FG_DIM,
+        if session:
+            user_color = USER_COLORS.get(session.color or "")
+            if user_color:
+                dot = tk.Frame(top, bg=user_color[0], width=8, height=12)
+                dot.pack(side="left", padx=(4, 0))
+                dot.pack_propagate(False)
+            age_lbl = tk.Label(top, text=age, bg=BG, fg=FG_DIM,
                                font=("SF Pro Text", 9))
-            age_lbl.pack(side="right", padx=8)
+            age_lbl.pack(side="right")
+        else:
+            load_btn = tk.Label(top, text="⤴ load", bg=BG, fg=BLUE,
+                                font=("SF Pro Text", 9), cursor="hand2", padx=4)
+            load_btn.pack(side="right")
+            load_btn.bind("<Button-1>", lambda e, n=name: self._load_linked_session(n))
 
-        hw = [row, icon_lbl, name_lbl]
+        if session:
+            cwd_lbl = tk.Label(content,
+                               text=session.cwd.replace(str(Path.home()), "~"),
+                               bg=BG, fg=FG_DIM, font=("SF Mono", 9), anchor="w")
+            cwd_lbl.pack(fill="x")
+        else:
+            cwd_lbl = None
+
+        hw = [row, content, top, icon_lbl, name_lbl]
+        if session and cwd_lbl:
+            hw.append(cwd_lbl)
 
         if session:
             def on_click(e, s=session):
@@ -583,7 +610,6 @@ class JansApp:
                         _focus_session_by_tty(tty)
                         return
                 _open_session(s)
-
             for w in hw:
                 w.bind("<Button-1>", on_click)
 
@@ -591,7 +617,7 @@ class JansApp:
             w.bind("<Enter>", lambda e, ww=hw: [x.configure(bg=BG_HOVER) for x in ww])
             w.bind("<Leave>", lambda e, ww=hw: [x.configure(bg=BG) for x in ww])
 
-        tk.Frame(parent, bg=BG_SURFACE, height=1).pack(fill="x", padx=(24, 0))
+        tk.Frame(parent, bg=BG_SURFACE, height=1).pack(fill="x", padx=(20, 0))
 
     def _load_linked_session(self, name: str) -> None:
         from tkinter import filedialog
