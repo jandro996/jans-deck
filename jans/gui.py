@@ -167,6 +167,23 @@ def _task_plan_content(name: str) -> str:
     )
 
 
+def _symlink_context_files(main_repo: Path, worktree: Path,
+                           ticket_id: str | None = None) -> None:
+    """Symlink shared coding-context files from main repo into a new worktree."""
+    from jans.core.features import FEATURES_DIR
+    candidates = [
+        main_repo / ".claude-invariants.md",
+        main_repo / "task_coding_rules.md",
+    ]
+    if ticket_id:
+        candidates.append(FEATURES_DIR / f"{ticket_id}.md")
+    for src in candidates:
+        if src.exists():
+            dst = worktree / src.name
+            if not dst.exists():
+                dst.symlink_to(src)
+
+
 def _age(session: Session) -> str:
     from datetime import datetime
     s = int((datetime.now() - session.last_activity).total_seconds())
@@ -881,6 +898,7 @@ class JansApp:
                 ["git", "-C", str(main_repo), "worktree", "add", cwd, "-b", name],
                 capture_output=True,
             )
+            _symlink_context_files(main_repo, Path(cwd), ticket_id)
 
         with self._lock:
             color = self._next_color()
