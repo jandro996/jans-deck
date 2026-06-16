@@ -633,7 +633,7 @@ class JansApp:
         with self._lock:
             self._sessions.append(s)
         _open_session(s, resume=True)
-        self._render_sessions()
+        self._persist_and_render()
 
     def _toggle_feature(self, ticket_id: str) -> None:
         if ticket_id in self._features_expanded:
@@ -860,6 +860,12 @@ class JansApp:
 
         self._render_sessions()
 
+    def _persist_and_render(self) -> None:
+        """Save state to disk immediately and re-render. Call after any session list change."""
+        with self._lock:
+            save_sessions(self._sessions)
+        self._render_sessions()
+
     def _tick(self) -> None:
         try:
             self._features = load_features()
@@ -940,7 +946,7 @@ class JansApp:
 
         _open_session(s, resume=False)
         self._switch_tab("tasks")
-        self._render_sessions()
+        self._persist_and_render()
 
     def _new_tool(self) -> None:
         name = simpledialog.askstring("New tool session", "Name:", parent=self._root)
@@ -983,7 +989,7 @@ class JansApp:
             self._sessions.append(s)
         _open_session(s, resume=False)
         self._switch_tab("reviews")
-        self._render_sessions()
+        self._persist_and_render()
 
     def _load_dir(self) -> None:
         from tkinter import filedialog
@@ -998,7 +1004,7 @@ class JansApp:
                 self._sessions.append(s)
             _open_session(s)
             self._switch_tab(_session_kind(s))
-            self._render_sessions()
+            self._persist_and_render()
 
     def _next_color(self) -> str:
         palette = list(USER_COLORS.keys())
@@ -1025,7 +1031,7 @@ class JansApp:
             self._sessions.append(s)
         _open_session(s, resume=False)
         self._switch_tab(kind)
-        self._render_sessions()
+        self._persist_and_render()
 
     def _execute_command(self, cmd: dict) -> dict:
         action = cmd.get("action", "")
