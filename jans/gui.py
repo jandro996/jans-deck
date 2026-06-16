@@ -66,12 +66,12 @@ def _session_kind(s: "Session") -> str:  # returns one of _SESSION_TABS
     """Classify a session into one of the four tabs."""
     if s.kind:
         return s.kind
-    cwd = s.cwd
-    if cwd.startswith(str(_REVIEWS_DIR)):
+    cwd = s.cwd.lower()
+    if cwd.startswith(str(_REVIEWS_DIR).lower()):
         return "reviews"
-    if cwd.startswith(str(_TOOLS_DIR)):
+    if cwd.startswith(str(_TOOLS_DIR).lower()):
         return "tools"
-    if cwd.startswith(str(_TASKS_DIR)):
+    if cwd.startswith(str(_TASKS_DIR).lower()):
         return "tasks"
     return "research"
 
