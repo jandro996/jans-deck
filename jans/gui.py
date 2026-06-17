@@ -1025,7 +1025,7 @@ class JansApp:
         _bootstrap_planning_files(cwd, mode, name, repo=repo, pr=pr)
         with self._lock:
             color = self._next_color()
-        kind = "tasks" if mode == "task" else (mode + "s" if not mode.endswith("s") else mode)
+        kind = {"research": "research", "task": "tasks", "tool": "tools", "review": "reviews"}.get(mode, "research")
         s = Session(name=name, cwd=cwd, session_id=str(uuid.uuid4()), color=color, kind=kind)
         with self._lock:
             self._sessions.append(s)
