@@ -345,6 +345,7 @@ class JansApp:
             self._icon_ref = img  # prevent GC
 
         self._iterm_was_front = False
+        self._help_window: tk.Toplevel | None = None
 
         self._build_ui()
         self._refresh()
@@ -379,8 +380,10 @@ class JansApp:
                       cursor="hand2", activebackground=PURPLE, activeforeground=BG)
         self._new_btn  = tk.Button(toolbar, text="＋", **btn_kw)
         self._load_btn = tk.Button(toolbar, text="⤴ Load", command=self._load_dir, **btn_kw)
+        self._help_btn = tk.Button(toolbar, text="?", command=self._open_help, **btn_kw)
         self._new_btn.pack(side="left", padx=3, pady=2)
         self._load_btn.pack(side="left", padx=3, pady=2)
+        self._help_btn.pack(side="right", padx=3, pady=2)
 
         # Tab bar
         tab_bar = tk.Frame(self._root, bg=BG_SURFACE)
@@ -641,6 +644,44 @@ class JansApp:
         else:
             self._features_expanded.add(ticket_id)
         self._render_sessions()
+
+    def _open_help(self) -> None:
+        if self._help_window is not None and self._help_window.winfo_exists():
+            self._help_window.lift()
+            self._help_window.focus_force()
+            return
+
+        win = tk.Toplevel(self._root)
+        win.title("Skills quick reference")
+        win.configure(bg=BG)
+        win.geometry("500x600")
+        win.minsize(400, 300)
+        self._help_window = win
+
+        quickref = Path.home() / ".claude" / "knowledge" / "_meta" / "skills-quickref.md"
+        if quickref.exists():
+            content = quickref.read_text()
+        else:
+            content = f"Quick reference not found.\nPath: {quickref}"
+
+        frame = tk.Frame(win, bg=BG)
+        frame.pack(fill="both", expand=True, padx=10, pady=(10, 4))
+
+        scrollbar = tk.Scrollbar(frame, orient="vertical")
+        txt = tk.Text(frame, bg=BG, fg=FG, font=("SF Mono", 11),
+                      bd=0, wrap="word", yscrollcommand=scrollbar.set,
+                      padx=6, pady=6, selectbackground=BG_HOVER)
+        scrollbar.configure(command=txt.yview)
+        scrollbar.pack(side="right", fill="y")
+        txt.pack(side="left", fill="both", expand=True)
+
+        txt.insert("1.0", content)
+        txt.configure(state="disabled")
+
+        btn_kw = dict(bg=BG_HOVER, fg=FG, relief="flat",
+                      font=("SF Pro Text", 10), padx=7, pady=3,
+                      cursor="hand2", activebackground=PURPLE, activeforeground=BG)
+        tk.Button(win, text="Close", command=win.destroy, **btn_kw).pack(pady=(0, 8))
 
     def _new_feature(self) -> None:
         ticket = simpledialog.askstring("New feature", "Ticket ID (e.g. JIRA-1234):",
