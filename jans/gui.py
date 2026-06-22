@@ -9,7 +9,7 @@ from tkinter import simpledialog, ttk
 from jans.core.commands import read_pending_command, write_result
 from jans.core.features import Feature, create_feature, link_session, load_features
 from jans.core.log import log
-from jans.core.persistence import load_saved_sessions, save_sessions
+from jans.core.persistence import load_saved_sessions, migrate_claude_project_dir, save_sessions
 from jans.core.state_detector import detect_state, find_claude_session_for_cwd
 from jans.models import Session, SessionState
 
@@ -907,14 +907,28 @@ class JansApp:
         self._render_sessions()
 
     def _merge_external_sessions(self) -> None:
-        """If state.json was modified externally, merge new sessions into memory."""
+        """If state.json was modified externally, merge new sessions into memory.
+
+        Also detects cwd changes for existing sessions and renames the Claude
+        project directory so transcripts remain accessible.
+        """
         current_mtime = _state_file_mtime()
         if current_mtime <= self._last_save_mtime:
             return
         log.info("state.json modified externally, merging")
         disk_sessions = load_saved_sessions()
-        known_names = {s.name for s in self._sessions}
-        added = [s for s in disk_sessions if s.name not in known_names]
+        by_name = {s.name: s for s in self._sessions}
+        added = []
+        for ds in disk_sessions:
+            mem = by_name.get(ds.name)
+            if mem is None:
+                added.append(ds)
+            elif mem.cwd != ds.cwd:
+                # cwd changed externally - migrate Claude project dir and update memory
+                migrate_claude_project_dir(mem.cwd, ds.cwd)
+                idx = next(i for i, s in enumerate(self._sessions) if s.name == ds.name)
+                self._sessions[idx] = dataclasses.replace(self._sessions[idx], cwd=ds.cwd)
+                log.info("updated cwd for %s: %s -> %s", ds.name, mem.cwd, ds.cwd)
         if added:
             log.info("merging %d external session(s): %s", len(added), [s.name for s in added])
             self._sessions.extend(added)

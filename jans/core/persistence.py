@@ -6,6 +6,31 @@ from jans.models import Session, SessionState
 
 JANS_DIR = Path.home() / ".jans"
 STATE_FILE = JANS_DIR / "state.json"
+CLAUDE_PROJECTS = Path.home() / ".claude" / "projects"
+
+
+def _claude_project_key(cwd: str) -> str:
+    """Convert a cwd path to the Claude project directory name."""
+    return cwd.replace("/", "-").replace(".", "-")
+
+
+def migrate_claude_project_dir(old_cwd: str, new_cwd: str) -> bool:
+    """Rename Claude's project directory when a session's cwd changes.
+
+    Returns True if renamed, False if skipped (src missing or dst already exists).
+    """
+    from jans.core.log import log
+    old_dir = CLAUDE_PROJECTS / _claude_project_key(old_cwd)
+    new_dir = CLAUDE_PROJECTS / _claude_project_key(new_cwd)
+    if not old_dir.exists():
+        log.debug("migrate_claude_project_dir: src missing %s", old_dir.name)
+        return False
+    if new_dir.exists():
+        log.debug("migrate_claude_project_dir: dst already exists %s", new_dir.name)
+        return False
+    old_dir.rename(new_dir)
+    log.info("renamed Claude project dir: %s -> %s", old_dir.name, new_dir.name)
+    return True
 
 
 def save_sessions(sessions: list[Session]) -> None:
