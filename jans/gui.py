@@ -937,6 +937,19 @@ class JansApp:
         if added:
             log.info("merging %d external session(s): %s", len(added), [s.name for s in added])
             self._sessions.extend(added)
+
+        # Deletion pass: remove sessions that disappeared from disk, but only if they
+        # are not actively running (guard against concurrent write races).
+        _active = {SessionState.PROCESSING, SessionState.WAITING, SessionState.NEEDS_INPUT}
+        disk_names = {ds.name for ds in disk_sessions}
+        to_remove = [s for s in self._sessions
+                     if s.name not in disk_names and s.state not in _active]
+        if to_remove:
+            log.info("removing %d session(s) deleted externally: %s",
+                     len(to_remove), [s.name for s in to_remove])
+            remove_names = {s.name for s in to_remove}
+            self._sessions = [s for s in self._sessions if s.name not in remove_names]
+
         self._last_save_mtime = current_mtime
 
     def _tick(self) -> None:
