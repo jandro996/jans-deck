@@ -6,16 +6,24 @@ from pathlib import Path
 from jans.core.commands import send_command
 
 
+COLORS = ["red", "orange", "yellow", "green", "blue", "purple", "pink", "teal"]
+
+
 def usage():
-    print("""jans-ctl <command> [args]
+    print(f"""jans-ctl <command> [args]
 
 Commands:
   list                        List all sessions and their states
   new-research <name>         Create a new research session in ~/research/<name>/
-  new-task <name>             Create a new task session
+  new-task <repo> <name> [ticket]  Create a task worktree, optionally linked to a feature
+  new-tool <name>             Create a new tooling session in ~/tools/<name>/
+  new-feature <ticket> <nickname> [desc]  Create a feature manifest
+  feature-status <ticket>     Show sessions linked to a feature and their states
+  new-review <url>            Create a review session from a GitHub PR URL
   load <path> [name]          Load an existing directory as a session
   rename <current> <new>      Rename a session
   delete <name>               Remove a session from jans
+  color <name> <color>        Set a color tag for a session ({", ".join(COLORS)})
   home                        Switch right panel back to orchestrator
   switch <name>               Switch right panel to a named session
   state                       Show current app state (sessions + status)
@@ -39,10 +47,32 @@ def main():
             sys.exit(1)
         result = send_command("new-research", name=rest[0])
     elif cmd == "new-task":
+        if len(rest) < 2:
+            print("Error: repo and name required", file=sys.stderr)
+            sys.exit(1)
+        ticket = rest[2] if len(rest) > 2 else None
+        result = send_command("new-task", repo=rest[0], name=rest[1], ticket=ticket)
+    elif cmd == "new-feature":
+        if len(rest) < 2:
+            print("Error: ticket and nickname required", file=sys.stderr)
+            sys.exit(1)
+        result = send_command("new-feature", ticket=rest[0], nickname=rest[1],
+                              description=" ".join(rest[2:]) if len(rest) > 2 else "")
+    elif cmd == "feature-status":
+        if not rest:
+            print("Error: ticket required", file=sys.stderr)
+            sys.exit(1)
+        result = send_command("feature-status", ticket=rest[0])
+    elif cmd == "new-tool":
         if not rest:
             print("Error: name required", file=sys.stderr)
             sys.exit(1)
-        result = send_command("new-task", name=rest[0])
+        result = send_command("new-tool", name=rest[0])
+    elif cmd == "new-review":
+        if not rest:
+            print("Error: GitHub PR URL required", file=sys.stderr)
+            sys.exit(1)
+        result = send_command("new-review", url=rest[0])
     elif cmd == "load":
         if not rest:
             print("Error: path required", file=sys.stderr)
@@ -60,6 +90,11 @@ def main():
             print("Error: name required", file=sys.stderr)
             sys.exit(1)
         result = send_command("delete", name=rest[0])
+    elif cmd == "color":
+        if len(rest) < 2:
+            print(f"Error: name and color required. Colors: {', '.join(COLORS)}", file=sys.stderr)
+            sys.exit(1)
+        result = send_command("color", name=rest[0], color=rest[1])
     elif cmd == "home":
         result = send_command("home")
     elif cmd == "switch":

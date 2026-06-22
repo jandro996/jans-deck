@@ -25,6 +25,7 @@ jans-ctl rename <current> <new>      # rename a session
 jans-ctl delete <name>               # remove from jans (never deletes files)
 jans-ctl switch <name>               # switch panel to that session
 jans-ctl home                        # return panel to orchestrator
+jans-ctl color <name> <color>        # set color tag (red, orange, yellow, green, blue, purple, pink, teal)
 ```
 
 ## Interpreting the user (Spanish examples)
@@ -38,6 +39,8 @@ jans-ctl home                        # return panel to orchestrator
 | "Ve a la sesión de appsec" | `jans-ctl switch appsec` |
 | "Borra vertx" | ask confirmation, then `jans-ctl delete vertx` |
 | "Crea una tarea para APPSEC-12345" | `jans-ctl new-task appsec-12345` |
+| "Pon e2e-sca en verde" | `jans-ctl color e2e-sca green` |
+| "Marca sca de azul" | `jans-ctl color sca-reachability blue` |
 
 ## Rules
 

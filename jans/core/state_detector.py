@@ -7,7 +7,7 @@ from jans.models import Session, SessionState
 
 CLAUDE_SESSIONS = Path.home() / ".claude" / "sessions"
 CLAUDE_PROJECTS = Path.home() / ".claude" / "projects"
-PROCESSING_THRESHOLD_SECS = 8
+PROCESSING_THRESHOLD_SECS = 5
 
 
 def _is_pid_alive(pid: int) -> bool:
@@ -72,22 +72,25 @@ def detect_state(session: Session) -> tuple[SessionState, datetime]:
     if session.pid and not _is_pid_alive(session.pid):
         return SessionState.TERMINATED, session.last_activity
 
-    jsonl = _find_jsonl(session.session_id, session.cwd)
+    # Resolve the live session_id from ~/.claude/sessions/ by cwd.
+    # This handles stale session_ids in state.json and sessions never opened since migration.
+    live = find_claude_session_for_cwd(session.cwd)
+    live_session_id = live[0] if live else session.session_id
+
+    jsonl = _find_jsonl(live_session_id, session.cwd)
     if not jsonl:
-        return SessionState.PROCESSING, session.last_activity
+        return SessionState.PAUSED, session.last_activity
 
     mtime = datetime.fromtimestamp(jsonl.stat().st_mtime)
     age = (datetime.now() - mtime).total_seconds()
 
     last_type, has_pending_tool_use = _analyze_last_messages(jsonl)
 
-    # NEEDS_INPUT takes priority over the time threshold -
-    # a pending tool_use is always urgent regardless of when the JSONL was modified.
-    if has_pending_tool_use:
-        return SessionState.NEEDS_INPUT, mtime
-
     if age < PROCESSING_THRESHOLD_SECS:
         return SessionState.PROCESSING, mtime
+
+    if has_pending_tool_use:
+        return SessionState.NEEDS_INPUT, mtime
 
     if last_type == "assistant":
         return SessionState.WAITING, mtime
@@ -128,10 +131,16 @@ def _norm(path: str) -> str:
 
 def find_real_session_id(cwd: str) -> str | None:
     """Find the most recent active Claude session ID for a given cwd."""
+    result = find_claude_session_for_cwd(cwd)
+    return result[0] if result else None
+
+
+def find_claude_session_for_cwd(cwd: str) -> tuple[str, int] | None:
+    """Return (session_id, pid) for the most recent active Claude session for cwd."""
     if not CLAUDE_SESSIONS.exists():
         return None
     cwd_norm = _norm(cwd)
-    best = None
+    best: tuple[str, int] | None = None
     best_mtime = 0.0
     for f in CLAUDE_SESSIONS.glob("*.json"):
         try:
@@ -144,7 +153,7 @@ def find_real_session_id(cwd: str) -> str | None:
             mtime = f.stat().st_mtime
             if mtime > best_mtime:
                 best_mtime = mtime
-                best = data.get("sessionId")
+                best = (data.get("sessionId"), pid)
         except Exception:
             pass
     return best

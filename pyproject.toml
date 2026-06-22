@@ -11,8 +11,11 @@ dependencies = [
     "pyte>=0.8.0",
     "ptyprocess>=0.7.0",
     "watchfiles>=0.21.0",
+    "rumps>=0.4.0",
 ]
 
 [project.scripts]
 jans = "jans.__main__:main"
 jans-ctl = "jans.ctl:main"
+jans-menu = "jans.menubar:main"
+jans-gui = "jans.gui:main"
