@@ -56,7 +56,8 @@ _JANS_DIR = Path(__file__).parent.parent
 _JANS_CWD    = str(Path.home() / "research" / "jans")
 _TOOLS_DIR   = Path.home() / "tools"
 _REVIEWS_DIR = Path.home() / "reviews"
-_TASKS_DIR   = Path.home() / "IdeaProjects"
+_TASKS_DIR   = Path.home() / "tasks"
+_REPOS_DIR   = Path.home() / "repos"
 
 _SESSION_TABS = ("research", "tasks", "tools", "reviews")
 _ALL_TABS     = ("features",) + _SESSION_TABS
@@ -166,22 +167,6 @@ def _task_plan_content(name: str) -> str:
         "- [ ] Phase 5: Merge and close (/finish-pr)\n"
     )
 
-
-def _symlink_context_files(main_repo: Path, worktree: Path,
-                           ticket_id: str | None = None) -> None:
-    """Symlink shared coding-context files from main repo into a new worktree."""
-    from jans.core.features import FEATURES_DIR
-    candidates = [
-        main_repo / ".claude-invariants.md",
-        main_repo / "task_coding_rules.md",
-    ]
-    if ticket_id:
-        candidates.append(FEATURES_DIR / f"{ticket_id}.md")
-    for src in candidates:
-        if src.exists():
-            dst = worktree / src.name
-            if not dst.exists():
-                dst.symlink_to(src)
 
 
 def _age(session: Session) -> str:
@@ -965,13 +950,14 @@ class JansApp:
         Path(cwd).mkdir(parents=True, exist_ok=True)
         _bootstrap_planning_files(cwd, "task", name)
 
-        main_repo = _TASKS_DIR / repo
+        main_repo = _REPOS_DIR / repo
+        if not main_repo.exists():
+            main_repo = _TASKS_DIR / repo
         if main_repo.exists():
             subprocess.run(
                 ["git", "-C", str(main_repo), "worktree", "add", cwd, "-b", name],
                 capture_output=True,
             )
-            _symlink_context_files(main_repo, Path(cwd), ticket_id)
 
         with self._lock:
             color = self._next_color()
@@ -1015,7 +1001,9 @@ class JansApp:
         Path(cwd).mkdir(parents=True, exist_ok=True)
         _bootstrap_planning_files(cwd, "review", name, repo=full_repo, pr=pr_number)
 
-        local_repo = Path.home() / "IdeaProjects" / short_name
+        local_repo = _REPOS_DIR / short_name
+        if not local_repo.exists():
+            local_repo = _TASKS_DIR / short_name
         if local_repo.exists():
             subprocess.run(
                 ["git", "-C", str(local_repo), "worktree", "add", cwd,
