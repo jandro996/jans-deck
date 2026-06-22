@@ -324,6 +324,8 @@ class JansApp:
         self._badge_applied: set[str] = set()           # names with badge set
         self._title_state: dict[str, SessionState] = {} # name -> state when title was last set
         self._last_save_mtime: float = _state_file_mtime()
+        self._unread: set[str] = set()          # sessions that finished since last focus
+        self._prev_states: dict[str, SessionState] = {}  # name -> state at last tick
 
         self._root = tk.Tk()
         self._root.title("jans")
@@ -726,11 +728,14 @@ class JansApp:
                          bg=BG, fg=FG_DIM, font=("SF Pro Text", 12),
                          pady=20).pack()
 
-            # Update tab button label with active count badge
+            # Update tab button label with active count and unread indicator
             active_count = len(active)
+            unread_count = sum(1 for s in inactive if s.name in self._unread)
             label = tab_name.capitalize()
             if active_count:
                 label += f"  {active_count}"
+            if unread_count:
+                label += f"  ◎{unread_count}"
             btn = self._tab_buttons[tab_name]
             is_active_tab = (tab_name == self._active_tab)
             btn.configure(text=label,
@@ -747,8 +752,10 @@ class JansApp:
         self._status_var.set("  " + "  ".join(parts) if parts else "  all paused")
 
     def _add_session_row(self, session: Session, frame: tk.Frame) -> None:
-        color = STATE_COLOR.get(session.state, FG)
-        icon  = STATE_ICON.get(session.state, "?")
+        is_unread = (session.state == SessionState.PAUSED
+                     and session.name in self._unread)
+        color = ORANGE if is_unread else STATE_COLOR.get(session.state, FG)
+        icon  = "◎" if is_unread else STATE_ICON.get(session.state, "?")
         name  = session.name if len(session.name) <= 22 else "…" + session.name[-21:]
         cwd   = session.cwd.replace(str(Path.home()), "~")
         age   = _age(session)
@@ -802,6 +809,7 @@ class JansApp:
                 w.configure(bg=BG)
 
         def on_click(e, s=session):
+            self._unread.discard(s.name)
             if s.state == SessionState.PAUSED:
                 _open_session(s)
                 with self._lock:
@@ -847,12 +855,21 @@ class JansApp:
                     and _pid_tty(claude[1]) in open_ttys
                 )
 
+                _active_states = {SessionState.PROCESSING, SessionState.WAITING,
+                                  SessionState.NEEDS_INPUT}
+
                 if not has_iterm_tab:
+                    prev = self._prev_states.get(s.name)
                     if s.state not in (SessionState.PAUSED, SessionState.TERMINATED):
+                        if s.state in _active_states:
+                            self._unread.add(s.name)
                         s = dataclasses.replace(s, state=SessionState.PAUSED)
+                    elif prev in _active_states:
+                        self._unread.add(s.name)
                     self._tab_colors_applied.pop(s.name, None)
                     self._badge_applied.discard(s.name)
                     self._title_state.pop(s.name, None)
+                    self._prev_states[s.name] = s.state
                     new_sessions.append(s)
                     continue
 
@@ -867,6 +884,7 @@ class JansApp:
                 new_state, last_activity = detect_state(s)
                 if new_state != s.state or last_activity != s.last_activity:
                     s = dataclasses.replace(s, state=new_state, last_activity=last_activity)
+                self._prev_states[s.name] = new_state
 
                 tty = _pid_tty(pid) if pid else None
                 if tty:
