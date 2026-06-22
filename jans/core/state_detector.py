@@ -68,69 +68,34 @@ def _analyze_last_messages(jsonl: Path) -> tuple[str | None, bool]:
     return last_type, has_pending_tool_use
 
 
-_STATUS_TO_STATE = {
-    "idle":  SessionState.WAITING,
-    "busy":  SessionState.PROCESSING,
-    "shell": SessionState.PROCESSING,
-}
-
-
 def detect_state(session: Session) -> tuple[SessionState, datetime]:
     if session.pid and not _is_pid_alive(session.pid):
         return SessionState.TERMINATED, session.last_activity
 
-    # Primary: read status directly from ~/.claude/sessions/<pid>.json via cwd lookup
-    claude = find_claude_session_for_cwd(session.cwd)
-    if claude:
-        session_id, pid = claude
-        if pid and _is_pid_alive(pid):
-            session_file = next(
-                (f for f in CLAUDE_SESSIONS.glob("*.json")
-                 if _read_pid(f) == pid),
-                None,
-            )
-            if session_file:
-                try:
-                    data = json.loads(session_file.read_text())
-                    status = data.get("status", "")
-                    updated_at = data.get("updatedAt")
-                    ts = (datetime.fromtimestamp(updated_at / 1000)
-                          if updated_at else session.last_activity)
-                    state = _STATUS_TO_STATE.get(status, SessionState.PROCESSING)
-                    # Promote to NEEDS_INPUT if idle long enough with pending tool use
-                    if state == SessionState.WAITING:
-                        jsonl = _find_jsonl(session_id, session.cwd)
-                        if jsonl:
-                            _, has_pending = _analyze_last_messages(jsonl)
-                            if has_pending:
-                                return SessionState.NEEDS_INPUT, ts
-                    return state, ts
-                except Exception:
-                    pass
+    # Resolve the live session_id from ~/.claude/sessions/ by cwd.
+    # This handles stale session_ids in state.json and sessions never opened since migration.
+    live = find_claude_session_for_cwd(session.cwd)
+    live_session_id = live[0] if live else session.session_id
 
-    # Fallback: infer state from JSONL transcript
-    jsonl = _find_jsonl(session.session_id, session.cwd)
+    jsonl = _find_jsonl(live_session_id, session.cwd)
     if not jsonl:
         return SessionState.PAUSED, session.last_activity
 
     mtime = datetime.fromtimestamp(jsonl.stat().st_mtime)
     age = (datetime.now() - mtime).total_seconds()
+
     last_type, has_pending_tool_use = _analyze_last_messages(jsonl)
 
     if age < PROCESSING_THRESHOLD_SECS:
         return SessionState.PROCESSING, mtime
+
     if has_pending_tool_use:
         return SessionState.NEEDS_INPUT, mtime
+
     if last_type == "assistant":
         return SessionState.WAITING, mtime
+
     return SessionState.PROCESSING, mtime
-
-
-def _read_pid(session_file: Path) -> int | None:
-    try:
-        return json.loads(session_file.read_text()).get("pid")
-    except Exception:
-        return None
 
 
 def load_active_claude_sessions() -> list[Session]:
