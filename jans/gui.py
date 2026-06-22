@@ -857,8 +857,13 @@ class JansApp:
                     continue
 
                 session_id, pid = claude
+                updates = {}
                 if session_id and session_id != s.session_id:
-                    s = dataclasses.replace(s, session_id=session_id)
+                    updates["session_id"] = session_id
+                if pid and pid != s.pid:
+                    updates["pid"] = pid
+                if updates:
+                    s = dataclasses.replace(s, **updates)
                 new_state, last_activity = detect_state(s)
                 if new_state != s.state or last_activity != s.last_activity:
                     s = dataclasses.replace(s, state=new_state, last_activity=last_activity)
