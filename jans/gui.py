@@ -306,6 +306,14 @@ end tell'''
     subprocess.run(["osascript", "-e", script], capture_output=True)
 
 
+def _state_file_mtime() -> float:
+    from jans.core.persistence import STATE_FILE
+    try:
+        return STATE_FILE.stat().st_mtime
+    except FileNotFoundError:
+        return 0.0
+
+
 class JansApp:
     def __init__(self):
         self._sessions: list[Session] = load_saved_sessions()
@@ -315,6 +323,7 @@ class JansApp:
         self._tab_colors_applied: dict[str, str] = {}   # name -> color applied
         self._badge_applied: set[str] = set()           # names with badge set
         self._title_state: dict[str, SessionState] = {} # name -> state when title was last set
+        self._last_save_mtime: float = _state_file_mtime()
 
         self._root = tk.Tk()
         self._root.title("jans")
@@ -886,18 +895,39 @@ class JansApp:
 
         self._render_sessions()
 
+    def _save_sessions(self) -> None:
+        """Save sessions and record the mtime so we can detect external edits."""
+        save_sessions(self._sessions)
+        self._last_save_mtime = _state_file_mtime()
+
     def _persist_and_render(self) -> None:
         """Save state to disk immediately and re-render. Call after any session list change."""
         with self._lock:
-            save_sessions(self._sessions)
+            self._save_sessions()
         self._render_sessions()
+
+    def _merge_external_sessions(self) -> None:
+        """If state.json was modified externally, merge new sessions into memory."""
+        current_mtime = _state_file_mtime()
+        if current_mtime <= self._last_save_mtime:
+            return
+        log.info("state.json modified externally, merging")
+        disk_sessions = load_saved_sessions()
+        known_names = {s.name for s in self._sessions}
+        added = [s for s in disk_sessions if s.name not in known_names]
+        if added:
+            log.info("merging %d external session(s): %s", len(added), [s.name for s in added])
+            self._sessions.extend(added)
+        self._last_save_mtime = current_mtime
 
     def _tick(self) -> None:
         try:
             self._features = load_features()
+            with self._lock:
+                self._merge_external_sessions()
             self._refresh()
             with self._lock:
-                save_sessions(self._sessions)
+                self._save_sessions()
         except Exception as e:
             log.error("GUI refresh error: %s", e)
         self._root.after(3000, self._tick)
