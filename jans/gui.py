@@ -1192,8 +1192,6 @@ class JansApp:
                              ticket_id: str | None = None) -> None:
         import uuid
         cwd = str(_TASKS_DIR / f"{repo}-{name}")
-        Path(cwd).mkdir(parents=True, exist_ok=True)
-        _bootstrap_planning_files(cwd, "task", name)
 
         main_repo = _REPOS_DIR / repo
         if not main_repo.exists():
@@ -1203,6 +1201,10 @@ class JansApp:
                 ["git", "-C", str(main_repo), "worktree", "add", cwd, "-b", name],
                 capture_output=True,
             )
+
+        # ensure dir exists even if worktree add failed or no repo found
+        Path(cwd).mkdir(parents=True, exist_ok=True)
+        _bootstrap_planning_files(cwd, "task", name)
 
         with self._lock:
             color = self._next_color()
