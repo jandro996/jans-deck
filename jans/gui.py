@@ -189,6 +189,9 @@ def _active_app() -> str:
 
 def _open_session(session: Session, resume: bool = True) -> None:
     cwd, name = session.cwd, session.name
+    if resume:
+        from jans.core.persistence import CLAUDE_PROJECTS, _claude_project_key
+        resume = (CLAUDE_PROJECTS / _claude_project_key(cwd)).exists()
     cmd = f"cd '{cwd}' && claude" + (" --continue" if resume else "")
     terminal = _active_app()
     if terminal == "intellij":
