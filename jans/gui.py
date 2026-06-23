@@ -1069,9 +1069,41 @@ class JansApp:
         name_entry = tk.Entry(pad, **entry_kw)
         name_entry.pack(fill="x", pady=(2, 8))
 
-        tk.Label(pad, text="Feature ticket (optional)", **lbl_kw).pack(anchor="w")
-        ticket_entry = tk.Entry(pad, **entry_kw)
-        ticket_entry.pack(fill="x", pady=(2, 12))
+        tk.Label(pad, text="Feature (optional)", **lbl_kw).pack(anchor="w")
+
+        features = self._features  # already loaded
+        new_feature_option = "＋ New feature…"
+        none_option = "— None —"
+        feature_choices = [none_option] + [
+            f"{f.ticket_id}  {f.nickname}" if f.nickname else f.ticket_id
+            for f in features
+        ] + [new_feature_option]
+        ticket_var = tk.StringVar(value=none_option)
+        ticket_cb = ttk.Combobox(pad, textvariable=ticket_var, values=feature_choices,
+                                 state="readonly", font=("SF Pro Text", 11))
+        ticket_cb.pack(fill="x", pady=(2, 0))
+
+        # New feature inline fields (hidden by default)
+        new_feat_frame = tk.Frame(pad, bg=BG)
+        tk.Label(new_feat_frame, text="Ticket ID", **lbl_kw).pack(anchor="w")
+        new_ticket_entry = tk.Entry(new_feat_frame, **entry_kw)
+        new_ticket_entry.pack(fill="x", pady=(2, 4))
+        tk.Label(new_feat_frame, text="Nickname", **lbl_kw).pack(anchor="w")
+        new_nick_entry = tk.Entry(new_feat_frame, **entry_kw)
+        new_nick_entry.pack(fill="x", pady=(2, 0))
+
+        def on_ticket_change(*_):
+            if ticket_var.get() == new_feature_option:
+                new_feat_frame.pack(fill="x", pady=(4, 8))
+                new_ticket_entry.focus_set()
+                win.geometry("420x340")
+            else:
+                new_feat_frame.pack_forget()
+                win.geometry("420x260")
+
+        ticket_cb.bind("<<ComboboxSelected>>", on_ticket_change)
+        # placeholder so do_create can read it
+        ticket_entry = None  # replaced by ticket_var + new_feat_frame
 
         # ── Buttons ───────────────────────────────────────────────
         btn_row = tk.Frame(pad, bg=BG)
@@ -1084,7 +1116,23 @@ class JansApp:
         def do_create():
             selected = repo_var.get()
             name = name_entry.get().strip()
-            ticket = ticket_entry.get().strip() or None
+
+            # Resolve ticket
+            ticket_sel = ticket_var.get()
+            if ticket_sel == none_option:
+                ticket = None
+            elif ticket_sel == new_feature_option:
+                new_tid = new_ticket_entry.get().strip()
+                new_nick = new_nick_entry.get().strip()
+                if not new_tid:
+                    new_ticket_entry.configure(bg=RED)
+                    return
+                create_feature(new_tid, new_nick, "")
+                self._features = load_features()
+                ticket = new_tid
+            else:
+                # Extract ticket_id (before the two spaces + nickname)
+                ticket = ticket_sel.split("  ")[0].strip()
 
             if not name:
                 name_entry.configure(bg=RED)
