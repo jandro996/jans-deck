@@ -79,6 +79,9 @@ def detect_state(session: Session) -> tuple[SessionState, datetime]:
 
     jsonl = _find_jsonl(live_session_id, session.cwd)
     if not jsonl:
+        # Live process found but no transcript yet — tab is open, no conversation started
+        if live:
+            return SessionState.WAITING, session.last_activity
         return SessionState.PAUSED, session.last_activity
 
     mtime = datetime.fromtimestamp(jsonl.stat().st_mtime)
