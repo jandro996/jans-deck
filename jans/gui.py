@@ -811,6 +811,12 @@ class JansApp:
 
         def on_click(e, s=session):
             self._unread.discard(s.name)
+            claude = find_claude_session_for_cwd(s.cwd)
+            if claude and claude[1]:
+                tty = _pid_tty(claude[1])
+                if tty and tty in _iterm_open_ttys():
+                    _focus_session_by_tty(tty)
+                    return
             if s.state == SessionState.PAUSED:
                 _open_session(s)
                 with self._lock:
@@ -818,12 +824,6 @@ class JansApp:
                         if x.session_id == s.session_id:
                             self._sessions[i] = dataclasses.replace(x, state=SessionState.PROCESSING)
             else:
-                claude = find_claude_session_for_cwd(s.cwd)
-                if claude and claude[1]:
-                    tty = _pid_tty(claude[1])
-                    if tty:
-                        _focus_session_by_tty(tty)
-                        return
                 _open_session(s)
 
         def on_right_click(e, s=session):
