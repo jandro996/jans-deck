@@ -1010,19 +1010,131 @@ class JansApp:
             self._create_session("research", name.strip())
 
     def _new_task(self) -> None:
-        repo = simpledialog.askstring("New task session", "Repo (e.g. dd-trace-java):",
-                                      parent=self._root)
-        if not repo or not repo.strip():
-            return
-        name = simpledialog.askstring("New task session", "Branch / task name:",
-                                      parent=self._root)
-        if not name or not name.strip():
-            return
-        ticket = simpledialog.askstring("New task session",
-                                        "Feature ticket ID (optional, leave empty to skip):",
-                                        parent=self._root)
-        self._create_task_session(repo.strip(), name.strip(),
-                                  ticket.strip() if ticket and ticket.strip() else None)
+        self._new_task_dialog()
+
+    def _new_task_dialog(self) -> None:
+        win = tk.Toplevel(self._root)
+        win.title("New task session")
+        win.configure(bg=BG)
+        win.geometry("420x260")
+        win.resizable(False, False)
+        win.transient(self._root)
+        win.grab_set()
+
+        btn_kw = dict(bg=BG_HOVER, fg=FG, relief="flat",
+                      font=("SF Pro Text", 11), padx=8, pady=4,
+                      cursor="hand2", activebackground=PURPLE, activeforeground=BG)
+        lbl_kw = dict(bg=BG, fg=FG, font=("SF Pro Text", 11), anchor="w")
+        entry_kw = dict(bg=BG_SURFACE, fg=FG, insertbackground=FG,
+                        relief="flat", font=("SF Pro Text", 11), bd=4)
+
+        pad = tk.Frame(win, bg=BG)
+        pad.pack(fill="both", expand=True, padx=16, pady=12)
+
+        # ── Step 1: Repo ──────────────────────────────────────────
+        tk.Label(pad, text="Repo", **lbl_kw).pack(anchor="w")
+
+        repos = sorted(p.name for p in _REPOS_DIR.iterdir() if p.is_dir()) \
+            if _REPOS_DIR.exists() else []
+        clone_option = "＋ Clone from GitHub URL…"
+        choices = repos + [clone_option]
+
+        repo_var = tk.StringVar(value=choices[0] if repos else clone_option)
+        repo_cb = ttk.Combobox(pad, textvariable=repo_var, values=choices,
+                               state="readonly", font=("SF Pro Text", 11))
+        repo_cb.pack(fill="x", pady=(2, 8))
+
+        # Clone URL row (hidden by default)
+        clone_frame = tk.Frame(pad, bg=BG)
+        tk.Label(clone_frame, text="GitHub URL", **lbl_kw).pack(anchor="w")
+        clone_entry = tk.Entry(clone_frame, **entry_kw)
+        clone_entry.pack(fill="x", pady=(2, 0))
+        clone_status = tk.Label(clone_frame, text="", bg=BG, fg=FG_DIM,
+                                font=("SF Pro Text", 10), anchor="w")
+        clone_status.pack(anchor="w")
+
+        def on_repo_change(*_):
+            if repo_var.get() == clone_option:
+                clone_frame.pack(fill="x", pady=(0, 8))
+                clone_entry.focus_set()
+            else:
+                clone_frame.pack_forget()
+
+        repo_cb.bind("<<ComboboxSelected>>", on_repo_change)
+        if not repos:
+            clone_frame.pack(fill="x", pady=(0, 8))
+
+        # ── Step 2: Name & ticket ─────────────────────────────────
+        tk.Label(pad, text="Branch / task name", **lbl_kw).pack(anchor="w")
+        name_entry = tk.Entry(pad, **entry_kw)
+        name_entry.pack(fill="x", pady=(2, 8))
+
+        tk.Label(pad, text="Feature ticket (optional)", **lbl_kw).pack(anchor="w")
+        ticket_entry = tk.Entry(pad, **entry_kw)
+        ticket_entry.pack(fill="x", pady=(2, 12))
+
+        # ── Buttons ───────────────────────────────────────────────
+        btn_row = tk.Frame(pad, bg=BG)
+        btn_row.pack(fill="x")
+        tk.Button(btn_row, text="Cancel", command=win.destroy, **btn_kw).pack(side="right", padx=(4, 0))
+        create_btn = tk.Button(btn_row, text="Create", **btn_kw)
+        create_btn.configure(activebackground=GREEN)
+        create_btn.pack(side="right")
+
+        def do_create():
+            selected = repo_var.get()
+            name = name_entry.get().strip()
+            ticket = ticket_entry.get().strip() or None
+
+            if not name:
+                name_entry.configure(bg=RED)
+                return
+
+            if selected == clone_option:
+                url = clone_entry.get().strip()
+                if not url:
+                    clone_entry.configure(bg=RED)
+                    return
+                repo_name = url.rstrip("/").split("/")[-1]
+                if repo_name.endswith(".git"):
+                    repo_name = repo_name[:-4]
+                dest = _REPOS_DIR / repo_name
+                if dest.exists():
+                    # already cloned
+                    self._do_create_task_after_clone(win, repo_name, name, ticket)
+                    return
+                # Clone in background
+                create_btn.configure(state="disabled")
+                clone_status.configure(text=f"Cloning {repo_name}…", fg=YELLOW)
+                _REPOS_DIR.mkdir(parents=True, exist_ok=True)
+
+                def clone_thread():
+                    result = subprocess.run(
+                        ["git", "clone", url, str(dest)],
+                        capture_output=True, text=True,
+                    )
+                    if result.returncode == 0:
+                        win.after(0, lambda: self._do_create_task_after_clone(
+                            win, repo_name, name, ticket))
+                    else:
+                        err = result.stderr.strip().splitlines()[-1] if result.stderr else "clone failed"
+                        win.after(0, lambda: (
+                            clone_status.configure(text=err, fg=RED),
+                            create_btn.configure(state="normal"),
+                        ))
+
+                threading.Thread(target=clone_thread, daemon=True).start()
+            else:
+                self._do_create_task_after_clone(win, selected, name, ticket)
+
+        create_btn.configure(command=do_create)
+        win.bind("<Return>", lambda e: do_create())
+        name_entry.focus_set()
+
+    def _do_create_task_after_clone(self, win: "tk.Toplevel", repo: str,
+                                    name: str, ticket: str | None) -> None:
+        win.destroy()
+        self._create_task_session(repo, name, ticket)
 
     def _create_task_session(self, repo: str, name: str,
                              ticket_id: str | None = None) -> None:
