@@ -1,5 +1,6 @@
 """jans GUI - native macOS window using tkinter."""
 import dataclasses
+import os
 import subprocess
 import threading
 import tkinter as tk
@@ -1184,8 +1185,18 @@ class JansApp:
         elif action == "delete":
             name = cmd.get("name")
             with self._lock:
+                target = next((s for s in self._sessions if s.name == name), None)
                 self._sessions = [s for s in self._sessions if s.name != name]
-            self._root.after(0, self._render_sessions)
+            if target:
+                claude = find_claude_session_for_cwd(target.cwd)
+                if claude and claude[1]:
+                    try:
+                        import signal
+                        os.kill(claude[1], signal.SIGTERM)
+                        log.info("sent SIGTERM to pid %d for deleted session %s", claude[1], name)
+                    except Exception as e:
+                        log.warning("could not kill pid for %s: %s", name, e)
+            self._root.after(0, self._persist_and_render)
             return {"ok": True}
         elif action == "rename":
             current, new = cmd.get("current"), cmd.get("new")
