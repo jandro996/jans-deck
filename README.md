@@ -10,6 +10,22 @@ You run many Claude Code sessions in parallel - one per task, research investiga
 
 ---
 
+## Why
+
+Generic session managers and terminal multiplexers give you panes and tabs. That is not the problem. The problem is that Claude Code sessions have structure that no generic tool understands:
+
+- A session has a **state** — not just running/stopped, but processing, waiting for your reply, waiting for tool approval, or finished-but-you-haven't-looked-yet. That state lives in `~/.claude/sessions/` and the JSONL transcript, not in the terminal.
+- A task session should create a **git worktree and branch** automatically, not just a directory.
+- Sessions belong to **features** that span multiple repos. A ticket may have a dd-trace-java task, a system-tests task, and a research session — you want to see them grouped.
+- Each session needs **scaffolding files** bootstrapped on creation: `task_plan.md`, `session.md`, `progress.md`. These are what hooks inject into Claude on every tool call.
+- When a session closes, it should clean up the worktree, update the KB, and remove itself from the session list — a lifecycle, not just a tab.
+
+jans-deck exists because these are Claude Code-specific concepts. A generic tool would need the same integration work added on top — at that point you are building jans-deck anyway.
+
+> **Personal tool.** Built for one person's specific workflow on macOS + iTerm2 + Claude Code. It assumes a fixed directory layout (`~/tasks`, `~/repos`, `~/research`), a companion hooks and skills system, and opinionated conventions. It works well for that setup and will need adaptation for anything else.
+
+---
+
 ## Session tabs
 
 Sessions are organized into five tabs:
