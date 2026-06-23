@@ -1,4 +1,4 @@
-# jans-ai-agents-manager
+# jans-deck
 
 A macOS GUI for managing multiple concurrent Claude Code sessions. Shows all sessions in a sidebar with live state indicators, lets you focus any session with one click, and integrates with iTerm2 for tab coloring and voice control.
 
@@ -52,7 +52,7 @@ Requirements: macOS, Python 3.12+, iTerm2.
 > ```
 
 ```bash
-git clone https://github.com/your-username/jans-ai-agents-manager ~/research/jans
+git clone https://github.com/your-username/jans-deck ~/research/jans
 cd ~/research/jans
 python3 -m venv .venv-menu
 source .venv-menu/bin/activate
