@@ -1,93 +1,170 @@
 # jans-deck
 
-A macOS GUI for managing multiple concurrent Claude Code sessions. Shows all sessions in a sidebar with live state indicators, lets you focus any session with one click, and integrates with iTerm2 for tab coloring and voice control.
+A macOS sidebar GUI for managing multiple concurrent Claude Code sessions. Tracks live state, organizes sessions by type, integrates with iTerm2, and lets any Claude session control the others via CLI.
 
 ---
 
-## Features
+## What it does
 
-**Session management**
-- Session list organized in tabs: Tasks, Research, Tools, Reviews, Features
-- Create sessions with scaffolding: `task_plan.md`, `progress.md`, `session.md` bootstrapped automatically
-- Task sessions create a git worktree in `~/tasks/<repo>-<name>/`; research sessions create `~/research/<name>/`
-- Feature manifests link related sessions to a ticket ID (e.g. `APPSEC-63000`)
-
-**State indicators**
-
-| State | Icon | Color | Meaning |
-|-------|------|-------|---------|
-| `processing` | ▶ | yellow | Claude is actively running |
-| `waiting` | ● | green | Claude is waiting for user input |
-| `needs_input` | ⚡ | red | Tool use requires approval |
-| `unread` | ◎ | orange | Finished since you last looked — click to clear |
-| `paused` | ◉ | blue | No active Claude process |
-| `terminated` | ✗ | grey | Process ended |
-
-The **unread** state persists until you click the session in jans. If you focus the session directly in iTerm2, the state clears on the next tick (≤3s).
-
-**iTerm2 integration**
-- Tab color matches the session's state color, updated every tick
-- Focus any session via jans click → the correct iTerm2 tab comes to front (matched by tty, not tab title)
-- User-defined color tags (red, orange, yellow, green, blue, purple, pink, teal) persist across restarts
-
-**Persistence and external edits**
-- State saved to `~/.jans/state.json` every 3s
-- External edits to `state.json` (e.g. from scripts) are detected by mtime and merged within one tick — jans does not overwrite them
-- Sessions deleted from `state.json` externally are removed from the GUI (with a safety guard: active sessions are never auto-removed during a concurrent write race)
-
-**Voice control**
-- Dictate to the orchestrator Claude session using Wispr Flow (paste mode)
-- Claude calls `jans-ctl` commands based on what you say
-- Example: "open a research session about gRPC timeouts" → `jans-ctl new-research grpc-timeouts`
+You run many Claude Code sessions in parallel - one per task, research investigation, tool, or code review. jans-deck gives you a single sidebar that shows all of them at a glance: what each one is doing right now, which ones need your attention, which ones finished while you were looking elsewhere. One click brings any session to the front in iTerm2.
 
 ---
 
-## Installation
+## Session tabs
 
-Requirements: macOS, Python 3.12+, iTerm2.
+Sessions are organized into five tabs:
 
-> **Important:** tkinter is not included in Homebrew's Python. Install Python from [python.org](https://www.python.org/downloads/) or via `pyenv` with the framework build:
-> ```bash
-> env PYTHON_CONFIGURE_OPTS="--enable-framework" pyenv install 3.12
-> ```
+| Tab | Directory | Created by |
+|-----|-----------|------------|
+| **Features** | `~/.claude/knowledge/_meta/features/` | Groups sessions under a ticket ID |
+| **Tasks** | `~/tasks/<repo>-<name>/` | git worktree off a repo in `~/repos/` |
+| **Research** | `~/research/<name>/` | standalone dir |
+| **Tools** | `~/tools/<name>/` | standalone dir |
+| **Reviews** | `~/reviews/<repo>-pr-<n>/` | from a GitHub PR URL |
 
-```bash
-git clone https://github.com/your-username/jans-deck ~/research/jans
-cd ~/research/jans
-python3 -m venv .venv-menu
-source .venv-menu/bin/activate
-pip install -e .
+Each tab header shows the count of active sessions (processing + waiting + needs_input). If sessions in that tab finished while you were not looking, an unread badge appears: `◎2`.
+
+---
+
+## Session states
+
+| Icon | Color | State | Meaning |
+|------|-------|-------|---------|
+| ▶ | yellow | `processing` | Claude is actively running |
+| ● | green | `waiting` | Claude finished, waiting for your next message |
+| ⚡ | red | `needs_input` | Tool use is pending your approval |
+| ◎ | orange | `unread` | Finished since you last focused it - click to clear |
+| ◉ | blue | `paused` | No active Claude process for this session |
+| ✗ | grey | `terminated` | Process exited |
+
+State is detected every 3 seconds by reading `~/.claude/sessions/` (live process + session ID) and the JSONL transcript at `~/.claude/projects/<key>/<session-id>.jsonl`. No hooks or modifications to Claude's config are needed.
+
+**How state detection works:**
+
+1. Find the live Claude process for this session's `cwd` in `~/.claude/sessions/*.json`
+2. Locate the JSONL transcript using the live session ID (not the one stored in state.json, which may be stale)
+3. Classify:
+   - JSONL modified < 15s ago: `processing`
+   - Last message is `assistant` with a pending `tool_use` and no `tool_result`: `needs_input`
+   - Last message is `assistant`, quiet > 15s: `waiting`
+   - No JSONL but live process found: `waiting` (tab is open, no message sent yet)
+   - No live process: `paused`
+
+---
+
+## Unread indicator
+
+When a session transitions from an active state (`processing`, `waiting`, `needs_input`) to `paused` while its iTerm2 tab is not in focus, it is marked as unread. The session row shows `◎` in orange instead of its normal icon, and the tab header shows `◎N` next to the count.
+
+Clicking the session in jans clears the unread mark. Restarting jans clears all unread state (it is not persisted to disk).
+
+---
+
+## Features tab
+
+The Features tab groups sessions by ticket ID. Each feature is a Markdown file in `~/.claude/knowledge/_meta/features/<TICKET>.md` with YAML frontmatter:
+
+```yaml
+---
+ticket: APPSEC-63000
+nickname: My Feature
+description: What this feature does
+sessions:
+  - dd-trace-java-my-feature-impl
+  - system-tests-my-feature
+---
 ```
 
-Add a launcher to your shell profile:
+Clicking a feature row expands it to show its linked sessions with live state indicators. Sessions that are not currently loaded in jans (e.g. already finished and removed) can be reloaded from the feature panel - jans will locate the session directory and add it back.
+
+Creating a new feature from the GUI or via `jans-ctl new-feature` writes this file. Linking a session to a feature (at task creation time or later) appends its name to the `sessions` list.
+
+---
+
+## Creating sessions
+
+### From the GUI
+
+Click **+ New** in any session tab. A dialog opens:
+
+- **Task**: pick a repo from `~/repos/` (or paste a GitHub clone URL to clone it first), enter a name, optionally link to a feature ticket (pick from existing features or create a new one inline). Creates a git worktree at `~/tasks/<repo>-<name>/` and bootstraps `session.md`, `task_plan.md`, `progress.md`.
+- **Research**: enter a name. Creates `~/research/<name>/` with the same scaffolding files.
+- **Review**: paste a GitHub PR URL. Clones or locates the repo, creates `~/reviews/<repo>-pr-<n>/`.
+- **Tool**: enter a name. Creates `~/tools/<name>/`.
+
+### Via jans-ctl
 
 ```bash
-alias jans="cd ~/research/jans && source .venv-menu/bin/activate && python -m jans.gui"
+jans-ctl new-task <repo> <name> [ticket]
+jans-ctl new-research <name>
+jans-ctl new-tool <name>
+jans-ctl new-review <github-pr-url>
+jans-ctl new-feature <ticket> <nickname> [description]
 ```
 
 ---
 
-## Usage
+## jans-ctl — full command reference
 
-### jans-ctl — programmatic and voice control
+`jans-ctl` sends commands to the running jans instance via `~/.jans/pending_cmd.json`. The GUI reads it on the next tick (≤3s) and writes the result to `~/.jans/cmd_result.json`.
 
 ```bash
-jans-ctl list                                    # list all sessions and states
+jans-ctl list                                    # list all sessions and their states
 jans-ctl new-research <name>                     # ~/research/<name>/
 jans-ctl new-task <repo> <name> [ticket]         # ~/tasks/<repo>-<name>/ (git worktree)
 jans-ctl new-tool <name>                         # ~/tools/<name>/
 jans-ctl new-review <github-pr-url>              # ~/reviews/<repo>-pr-<n>/
-jans-ctl new-feature <ticket> <nickname> [desc]  # feature manifest in KB
+jans-ctl new-feature <ticket> <nick> [desc]      # feature manifest in KB
 jans-ctl feature-status <ticket>                 # show sessions linked to a ticket
+jans-ctl load <path> [name]                      # add an existing directory as a session
 jans-ctl rename <current> <new>                  # rename a session
-jans-ctl delete <name>                           # remove from jans (never deletes files)
-jans-ctl color <name> <color>                    # set color tag
-jans-ctl switch <name>                           # bring session to front in GUI
+jans-ctl delete <name>                           # remove from jans (never deletes files or kills Claude)
+jans-ctl color <name> <color>                    # set color tag (red orange yellow green blue purple pink teal)
+jans-ctl switch <name>                           # bring session to front in iTerm2
+jans-ctl home                                    # focus the orchestrator session
 ```
 
-### Orchestrator
+---
 
-jans runs a Claude Code session in `~/research/jans/` that acts as orchestrator. It reads `CLAUDE.md` (which explains `jans-ctl`) and can control all other sessions on your behalf via voice or text.
+## iTerm2 integration
+
+- **Tab color**: each session's iTerm2 tab is colored to match its state (yellow/green/red/blue). If the session has a user-defined color tag, that takes priority.
+- **Tab badge**: the session name is set as the iTerm2 badge when the tab is first focused.
+- **Focus on click**: clicking a session in jans brings its iTerm2 tab to the front. Matching is done by tty device (not tab title, which Claude Code overwrites dynamically).
+- **Paused detection**: a session is considered paused when its Claude process's tty is not found in any open iTerm2 tab.
+
+---
+
+## Color tags
+
+Each session can have a persistent color tag that overrides the state color on the iTerm2 tab:
+
+```
+red  orange  yellow  green  blue  purple  pink  teal
+```
+
+Set via right-click context menu in the GUI or `jans-ctl color <name> <color>`.
+
+---
+
+## Persistence
+
+- State is saved to `~/.jans/state.json` every 3 seconds.
+- External edits to `state.json` (e.g. from a `/finish-pr` script removing a session) are detected by file mtime and merged into memory within one tick - jans never overwrites external changes.
+- Sessions deleted from `state.json` externally are removed from the GUI. Safety guard: active sessions (`processing`, `waiting`, `needs_input`) are never auto-removed even if they temporarily disappear from disk during a write race.
+- When a session's `cwd` changes externally, jans renames the corresponding `~/.claude/projects/` directory automatically to preserve conversation history.
+
+---
+
+## Orchestrator pattern
+
+jans runs a Claude Code session in `~/research/jans/` that acts as orchestrator. It has `jans-ctl` available and a `CLAUDE.md` that explains how to use it. You can dictate to it (e.g. via Wispr Flow) and it will create sessions, check status, and route work across all your other sessions on your behalf.
+
+Example: say "open a task for dd-trace-java on the gRPC timeout fix linked to APPSEC-99001" and the orchestrator runs:
+
+```bash
+jans-ctl new-task dd-trace-java grpc-timeout-fix APPSEC-99001
+```
 
 ---
 
@@ -95,38 +172,62 @@ jans runs a Claude Code session in `~/research/jans/` that acts as orchestrator.
 
 ```
 jans/
-├── gui.py              # tkinter main window (JansApp)
-├── ctl.py              # jans-ctl CLI — IPC via ~/.jans/pending_cmd.json
+├── gui.py              # tkinter main window (JansApp) - 3s tick loop
+├── ctl.py              # jans-ctl CLI entry point
 ├── models.py           # Session dataclass, SessionState enum
 └── core/
-    ├── state_detector.py  # detects session state from ~/.claude/ files
-    ├── persistence.py     # save/load ~/.jans/state.json with mtime-based merge
-    └── commands.py        # IPC: write/read ~/.jans/pending_cmd.json + cmd_result.json
+    ├── state_detector.py   # reads ~/.claude/sessions/ + JSONL to classify state
+    ├── persistence.py      # save/load ~/.jans/state.json, mtime-based merge, project dir migration
+    ├── commands.py         # IPC: write/read ~/.jans/pending_cmd.json + cmd_result.json
+    ├── features.py         # read/write ~/.claude/knowledge/_meta/features/*.md
+    └── log.py              # rotating file logger at ~/.jans/jans.log
 ```
 
-**IPC:** `jans-ctl` writes `~/.jans/pending_cmd.json`; the GUI reads it on the next 3s tick and writes the result to `~/.jans/cmd_result.json`.
+**Directory layout at runtime:**
 
-**state.json format:** flat JSON list of `{name, cwd, session_id, color, kind}`.
+```
+~/
+├── research/jans/          # jans source + orchestrator session cwd
+├── repos/                  # bare or full git repos (sources for worktrees)
+├── tasks/<repo>-<name>/    # task worktrees
+├── research/<name>/        # research sessions
+├── tools/<name>/           # tooling sessions
+├── reviews/<repo>-pr-<n>/  # PR review sessions
+└── .jans/
+    ├── state.json           # persisted session list
+    ├── pending_cmd.json     # IPC: jans-ctl -> GUI
+    ├── cmd_result.json      # IPC: GUI -> jans-ctl
+    └── jans.log             # debug log
+```
 
 ---
 
-## State detection
+## Installation
 
-On each tick, `state_detector.py` finds the live Claude session for a given `cwd`:
+Requirements: macOS, Python 3.12+, iTerm2.
 
-1. Scans `~/.claude/sessions/*.json` for the entry whose `cwd` matches (case-insensitive, for macOS)
-2. Reads the JSONL transcript at `~/.claude/projects/<project>/<session-id>.jsonl`
-3. Classifies state:
+> tkinter is not included in Homebrew Python. Use python.org or pyenv with framework build:
+> ```bash
+> env PYTHON_CONFIGURE_OPTS="--enable-framework" pyenv install 3.12
+> ```
 
-| Criterion | State |
-|-----------|-------|
-| Last JSONL entry is `tool_use` with no matching `tool_result` | `needs_input` |
-| Last JSONL entry is `assistant`, quiet > 15s | `waiting` |
-| JSONL modified < 15s ago | `processing` |
-| No live Claude process for this cwd | `paused` |
+```bash
+git clone git@github.com:jandro996/jans-deck.git ~/research/jans
+cd ~/research/jans
+python3 -m venv .venv-menu
+source .venv-menu/bin/activate
+pip install -e .
+```
 
-**iTerm2 tab detection:** a session is considered open (not paused) when its Claude process's tty appears in an iTerm2 tab. Detected via AppleScript + `ps`. This is more reliable than matching tab titles, which Claude Code overwrites dynamically.
+Start jans:
 
-**session_id sync:** jans stores session IDs in `state.json`. On each tick, the live session ID is resolved from `~/.claude/sessions/` by cwd and updated if it changed (e.g. after `claude --continue`).
+```bash
+~/research/jans/.venv-menu/bin/python3 -m jans.gui &
+```
 
-**Unread tracking:** when a session transitions from `processing`/`waiting`/`needs_input` to `paused`, it is added to `self._unread` (in-memory set). Cleared on click. Not persisted — restarting jans clears all unread indicators.
+Restart after code changes:
+
+```bash
+pkill -f "python.*jans.gui"; sleep 1
+~/research/jans/.venv-menu/bin/python3 -m jans.gui &
+```
