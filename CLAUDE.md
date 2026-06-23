@@ -1,50 +1,41 @@
-# jans orchestrator
+# jans-impl - sesión de desarrollo
 
-You are the orchestrator for **jans**, a terminal session manager. Your primary role is managing sessions - not coding.
+Estás en el worktree de desarrollo de jans. Repo principal: `~/research/jans` (rama `menu-bar`). Esta rama: `impl`.
 
-## First thing on every startup
+Lee `DEVELOPMENT.md` para el historial completo de cambios y decisiones arquitectónicas antes de tocar código.
 
-Run this immediately when the conversation starts:
-```bash
-jans-ctl list
+## Estructura clave
+
 ```
-Show the user their current sessions. If there are none, tell them they can ask you to open one.
-
-## Your job
-
-The user controls jans through you, often using voice dictation. When they say anything that resembles a session action, **execute it immediately** using `jans-ctl`. Do not ask for confirmation unless the action is destructive (delete).
-
-## Commands available
-
-```bash
-jans-ctl list                        # show all sessions and states
-jans-ctl new-research <name>         # new research session in ~/research/<name>/
-jans-ctl new-task <name>             # new task session
-jans-ctl load <path> [nickname]      # load an existing directory
-jans-ctl rename <current> <new>      # rename a session
-jans-ctl delete <name>               # remove from jans (never deletes files)
-jans-ctl switch <name>               # switch panel to that session
-jans-ctl home                        # return panel to orchestrator
-jans-ctl color <name> <color>        # set color tag (red, orange, yellow, green, blue, purple, pink, teal)
+jans/gui.py              # GUI tkinter - ventana principal
+jans/ctl.py              # jans-ctl CLI
+jans/models.py           # Session, SessionState
+jans/core/
+  commands.py            # IPC via ~/.jans/pending_cmd.json
+  state_detector.py      # Detección de estado via tty + JSONL
+  persistence.py         # ~/.jans/state.json
 ```
 
-## Interpreting the user (Spanish examples)
+## Para probar cambios
 
-| User says | You do |
-|-----------|--------|
-| "Abre una investigación sobre gRPC" | `jans-ctl new-research grpc-investigation` |
-| "Carga libddwaf-java" | `jans-ctl load ~/IdeaProjects/libddwaf-java` |
-| "¿Qué tengo abierto?" | `jans-ctl list` |
-| "Renombra grpc a grpc-timeout" | `jans-ctl rename grpc-investigation grpc-timeout` |
-| "Ve a la sesión de appsec" | `jans-ctl switch appsec` |
-| "Borra vertx" | ask confirmation, then `jans-ctl delete vertx` |
-| "Crea una tarea para APPSEC-12345" | `jans-ctl new-task appsec-12345` |
-| "Pon e2e-sca en verde" | `jans-ctl color e2e-sca green` |
-| "Marca sca de azul" | `jans-ctl color sca-reachability blue` |
+```bash
+pkill -f "python.*jans.gui"; sleep 1
+~/research/jans/.venv-menu/bin/python3 -m jans.gui &
+```
 
-## Rules
+El venv está en `~/research/jans/.venv-menu/` (compartido con el repo principal vía worktree).
 
-- Names must be kebab-case: `grpc-timeout-investigation`, not `grpc timeout investigation`
-- After every `jans-ctl` call, show the result briefly
-- `delete` never removes files from disk - just from jans
-- If the user wants to chat or think out loud, do so - but if they mention a session action, do it
+## Decisiones importantes
+
+- **Detección de estado**: tty del proceso Claude cruzada con ttys de iTerm2 (no nombres de tab, cambian dinámicamente)
+- **Colores de tab iTerm2**: escape sequences escritas directamente al tty (`/dev/ttysXXX`)
+- **Badge/título iTerm2**: badge se pone una vez al activar, título se restaura al nombre cuando está WAITING
+- **IPC**: archivo JSON polling cada 3s - simple y fiable
+- **Estado**: guardado a disco cada tick, no solo al cerrar
+
+## Flujo de trabajo
+
+Desarrolla aquí en `impl`. Cuando algo esté listo:
+```bash
+cd ~/research/jans && git merge impl
+```
