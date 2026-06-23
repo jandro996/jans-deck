@@ -162,10 +162,11 @@ def _task_plan_content(name: str) -> str:
         "## Phases\n\n"
         "- [ ] Phase 0: Pre-code analysis (/pre-code)\n"
         "- [ ] Phase 1: Implementation\n"
-        "- [ ] Phase 2: Pre-PR review (/pre-pr)\n"
-        "- [ ] Phase 3: Open PR (/pr-describe)\n"
-        "- [ ] Phase 4: Address review comments\n"
-        "- [ ] Phase 5: Merge and close (/finish-pr)\n"
+        "- [ ] Phase 2: Quality review (/quality) — optional\n"
+        "- [ ] Phase 3: Pre-PR review (/pre-pr)\n"
+        "- [ ] Phase 4: Open PR (/pr-describe)\n"
+        "- [ ] Phase 5: Address review comments\n"
+        "- [ ] Phase 6: Merge and close (/finish-pr)\n"
     )
 
 
@@ -189,6 +190,9 @@ def _active_app() -> str:
 
 def _open_session(session: Session, resume: bool = True) -> None:
     cwd, name = session.cwd, session.name
+    if resume:
+        from jans.core.persistence import CLAUDE_PROJECTS, _claude_project_key
+        resume = (CLAUDE_PROJECTS / _claude_project_key(cwd)).exists()
     cmd = f"cd '{cwd}' && claude" + (" --continue" if resume else "")
     terminal = _active_app()
     if terminal == "intellij":
