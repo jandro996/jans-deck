@@ -171,6 +171,27 @@ def _task_plan_content(name: str) -> str:
 
 
 
+def _read_last_progress(cwd: str) -> tuple[str, str]:
+    """Return (text, color) from the last meaningful line of progress.md, or ('', '')."""
+    try:
+        path = Path(cwd) / "progress.md"
+        if not path.exists():
+            return "", ""
+        lines = path.read_text().splitlines()
+        for line in reversed(lines):
+            line = line.strip()
+            if not line or not line.startswith("["):
+                continue
+            if "done" in line and "→" not in line:
+                return line, GREEN
+            if "next →" in line:
+                return line, BLUE
+            return line, FG_DIM
+    except Exception:
+        pass
+    return "", ""
+
+
 def _age(session: Session) -> str:
     from datetime import datetime
     s = int((datetime.now() - session.last_activity).total_seconds())
@@ -799,11 +820,20 @@ class JansApp:
                            font=("SF Mono", 10), anchor="w")
         cwd_lbl.pack(fill="x")
 
+        phase_text, phase_color = _read_last_progress(session.cwd)
+        phase_lbl = None
+        if phase_text:
+            phase_lbl = tk.Label(content, text=phase_text, bg=BG, fg=phase_color,
+                                 font=("SF Pro Text", 9), anchor="w")
+            phase_lbl.pack(fill="x")
+
         # Bottom separator
         tk.Frame(frame, bg=BG_SURFACE, height=1).pack(fill="x")
 
         # Hover: propagate bg to all content widgets (not the accent border)
         hover_widgets = [row, content, top, icon_lbl, name_lbl, age_lbl, cwd_lbl]
+        if phase_lbl:
+            hover_widgets.append(phase_lbl)
 
         def on_enter(e):
             for w in hover_widgets:
