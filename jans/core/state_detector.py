@@ -7,7 +7,14 @@ from jans.models import Session, SessionState
 
 CLAUDE_SESSIONS = Path.home() / ".claude" / "sessions"
 CLAUDE_PROJECTS = Path.home() / ".claude" / "projects"
+EXECUTING_DIR = Path.home() / ".claude" / "executing"
 PROCESSING_THRESHOLD_SECS = 5
+
+
+def _is_tool_executing(cwd: str) -> bool:
+    """Return True if inject-plan.sh pretool wrote a marker for this cwd (tool running, not pending permission)."""
+    key = cwd.replace("/", "__")
+    return (EXECUTING_DIR / key).exists()
 
 
 def _is_pid_alive(pid: int) -> bool:
@@ -93,6 +100,8 @@ def detect_state(session: Session) -> tuple[SessionState, datetime]:
         return SessionState.PROCESSING, mtime
 
     if has_pending_tool_use:
+        if _is_tool_executing(session.cwd):
+            return SessionState.PROCESSING, mtime
         return SessionState.NEEDS_INPUT, mtime
 
     if last_type == "assistant":
