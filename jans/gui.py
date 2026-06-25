@@ -895,11 +895,14 @@ class JansApp:
 
                 if not has_iterm_tab:
                     prev = self._prev_states.get(s.name)
+                    # Only mark UNREAD if Claude is still running (no window but alive).
+                    # If claude is None the process exited cleanly — no notification needed.
+                    claude_alive = claude is not None
                     if s.state not in (SessionState.PAUSED, SessionState.TERMINATED):
-                        if s.state in _active_states:
+                        if s.state in _active_states and claude_alive:
                             self._unread.add(s.name)
                         s = dataclasses.replace(s, state=SessionState.PAUSED)
-                    elif prev in _active_states:
+                    elif prev in _active_states and claude_alive:
                         self._unread.add(s.name)
                     self._tab_colors_applied.pop(s.name, None)
                     self._badge_applied.discard(s.name)
