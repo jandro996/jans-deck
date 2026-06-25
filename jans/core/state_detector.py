@@ -84,6 +84,12 @@ def detect_state(session: Session) -> tuple[SessionState, datetime]:
     live = find_claude_session_for_cwd(session.cwd)
     live_session_id = live[0] if live else session.session_id
 
+    # If the cwd directory no longer exists and there is no active process, the session
+    # is stale (worktree was deleted without cleanup). Treat as TERMINATED so save_sessions
+    # drops it and it stops reappearing in the UI.
+    if not live and not Path(session.cwd).exists():
+        return SessionState.TERMINATED, session.last_activity
+
     jsonl = _find_jsonl(live_session_id, session.cwd)
     if not jsonl:
         # Live process found but no transcript yet — tab is open, no conversation started
