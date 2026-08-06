@@ -1,6 +1,6 @@
 # jans-impl - sesión de desarrollo
 
-Estás en el worktree de desarrollo de jans. Repo principal: `~/research/jans` (rama `menu-bar`). Esta rama: `impl`.
+Estás en el worktree de desarrollo de jans. Repo principal: `~/research/jans` (rama `main`). Esta rama: `impl`.
 
 Lee `DEVELOPMENT.md` para el historial completo de cambios y decisiones arquitectónicas antes de tocar código.
 
@@ -35,7 +35,26 @@ El venv está en `~/research/jans/.venv-menu/` (compartido con el repo principal
 
 ## Flujo de trabajo
 
-Desarrolla aquí en `impl`. Cuando algo esté listo:
+Desarrolla aquí en `impl`.
+
+> **NO hagas `git merge impl` desde `main`.** Las historias de `main` e `impl` están
+> completamente divergentes (mismo código, pero commits con SHAs distintos y sin
+> ancestro común reciente: `menu-bar` se integró en `main` vía PR #1). Un merge real
+> produciría un conflicto masivo y borraría ficheros que solo existen en `main`
+> (LICENSE, README, iconos, `make_app.py`…).
+
+El contenido del paquete `jans/` es hoy idéntico byte a byte en ambas ramas. Para
+llevar un cambio de `impl` a `main`, aplícalo de forma puntual:
 ```bash
-cd ~/research/jans && git merge impl
+# opción A: portar el diff de un path concreto
+git -C ~/research/jans diff main impl -- jans/gui.py | git -C ~/research/jans apply
+
+# opción B: portar commits concretos
+git -C ~/research/jans cherry-pick <sha>
 ```
+Y verifica después que siguen alineadas:
+```bash
+git -C ~/research/jans diff main impl -- jans/   # debe salir vacío
+```
+Unificar de verdad las dos historias es una decisión aparte: háblalo con el usuario
+antes de intentarlo.
