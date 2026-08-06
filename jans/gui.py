@@ -1,6 +1,7 @@
 """jans GUI - native macOS window using tkinter."""
 import dataclasses
 import os
+import re
 import subprocess
 import threading
 import tkinter as tk
@@ -112,11 +113,26 @@ def _bootstrap_planning_files(
             "type: research\n"
             "related_projects: []\n"
             f"investigation: {name}\n"
+            'feature: "standalone"\n'
             "contribution_targets: []\n"
             "---\n"
         ))
-        _write("task_plan.md", _task_plan_content(name))
-        _write("findings.md", f"# Findings: {name}\n")
+        _write("task_plan.md", _task_plan_content(name, mode))
+        _write("findings.md", (
+            f"# Findings — {name}\n\n"
+            "Started: \n"
+            "Related projects: \n"
+            "Jira: —\n\n"
+            "---\n\n"
+            "## Invariants discovered\n\n"
+            "<!-- Constraints that must never be violated — go to {project}/domain/{subsystem}.md via /finish-research -->\n\n"
+            "## Patterns and non-obvious behavior\n\n"
+            "<!-- Things that would surprise a reader without context -->\n\n"
+            "## PR review rules\n\n"
+            "<!-- Patterns worth checking before opening PRs — go to {project}/pr-review.md via /finish-research -->\n\n"
+            "## Open questions\n\n"
+            "<!-- Things to investigate further -->\n"
+        ))
         _write("progress.md", f"# Progress: {name}\n")
 
     elif mode == "task":
@@ -128,8 +144,7 @@ def _bootstrap_planning_files(
             "contribution_targets: []\n"
             "---\n"
         ))
-        _write("task_plan.md", _task_plan_content(name))
-        _write("findings.md", f"# Findings: {name}\n")
+        _write("task_plan.md", _task_plan_content(name, mode))
         _write("progress.md", f"# Progress: {name}\n")
 
     elif mode == "tool":
@@ -142,7 +157,7 @@ def _bootstrap_planning_files(
             "  - _meta/workflow.md\n"
             "---\n"
         ))
-        _write("task_plan.md", _task_plan_content(name))
+        _write("task_plan.md", _task_plan_content(name, mode))
         _write("findings.md", f"# Findings: {name}\n")
         _write("progress.md", f"# Progress: {name}\n")
 
@@ -157,7 +172,15 @@ def _bootstrap_planning_files(
         ))
 
 
-def _task_plan_content(name: str) -> str:
+def _task_plan_content(name: str, mode: str) -> str:
+    if mode in ("research", "tool"):
+        return (
+            f"# Task plan: {name}\n\n"
+            "## Phases\n\n"
+            "Workflow reference (informational only - these are NOT tracked TODOs):\n\n"
+            "1. Investigate and document findings (see findings.md)\n"
+            "2. Close and contribute to KB (/finish-research)\n"
+        )
     return (
         f"# Task plan: {name}\n\n"
         "## Phases\n\n"
@@ -1175,6 +1198,10 @@ class JansApp:
                 ticket = ticket_sel.split("  ")[0].strip()
 
             if not name:
+                name_entry.configure(bg=RED)
+                return
+
+            if not re.match(r'^[A-Za-z0-9._-]+$', name):
                 name_entry.configure(bg=RED)
                 return
 
