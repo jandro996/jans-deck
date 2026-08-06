@@ -24,7 +24,7 @@ def usage():
 
 Commands:
   list                        List all sessions and their states
-  new-research <name>         Create a new research session in ~/research/<name>/
+  new-research <name> [ticket]  Create a research session in ~/research/<name>/, optionally linked to a feature
   new-task <repo> <name> [ticket]  Create a task worktree, optionally linked to a feature
   new-tool <name>             Create a new tooling session in ~/tools/<name>/
   new-feature <ticket> <nickname> [desc]  Create a feature manifest
@@ -55,7 +55,9 @@ def main():
         if not rest:
             print("Error: name required", file=sys.stderr)
             sys.exit(1)
-        result = send_command("new-research", name=require_valid_name(rest[0]))
+        ticket = require_valid_name(rest[1], "ticket") if len(rest) > 1 else None
+        result = send_command("new-research", name=require_valid_name(rest[0]),
+                              ticket=ticket)
     elif cmd == "new-task":
         if len(rest) < 2:
             print("Error: repo and name required", file=sys.stderr)
