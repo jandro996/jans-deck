@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -9,12 +10,24 @@ CLAUDE_SESSIONS = Path.home() / ".claude" / "sessions"
 CLAUDE_PROJECTS = Path.home() / ".claude" / "projects"
 EXECUTING_DIR = Path.home() / ".claude" / "executing"
 PROCESSING_THRESHOLD_SECS = 5
+# A marker older than this is considered orphaned: the Claude process died
+# (terminal closed, kill, crash) without the Stop hook removing it.
+EXECUTING_STALE_SECS = 15 * 60
 
 
 def _is_tool_executing(cwd: str) -> bool:
-    """Return True if inject-plan.sh pretool wrote a marker for this cwd (tool running, not pending permission)."""
+    """Return True if inject-plan.sh pretool wrote a marker for this cwd (tool running, not pending permission).
+
+    Stale markers (older than EXECUTING_STALE_SECS) are ignored so a crashed
+    Claude process does not leave the session stuck in PROCESSING forever.
+    The file is not deleted here: cleanup is the Stop hook's job.
+    """
     key = cwd.replace("/", "__")
-    return (EXECUTING_DIR / key).exists()
+    try:
+        mtime = os.path.getmtime(EXECUTING_DIR / key)
+    except OSError:
+        return False
+    return (time.time() - mtime) <= EXECUTING_STALE_SECS
 
 
 def _is_pid_alive(pid: int) -> bool:

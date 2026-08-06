@@ -5,6 +5,17 @@ from pathlib import Path
 
 FEATURES_DIR = Path.home() / ".claude" / "knowledge" / "_meta" / "features"
 
+# Names used as directories, git branches or manifest filenames must be safe:
+# no slashes (pasted URLs), no spaces, no shell metacharacters.
+NAME_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def is_valid_name(s: str) -> bool:
+    """True if `s` is safe to use as a session/branch/directory/file name."""
+    if not s:
+        return False
+    return bool(NAME_PATTERN.match(s.strip()))
+
 
 @dataclass
 class Feature:
@@ -62,6 +73,12 @@ def load_features() -> list[Feature]:
 
 
 def create_feature(ticket_id: str, nickname: str, description: str) -> Path:
+    ticket_id = (ticket_id or "").strip()
+    if not is_valid_name(ticket_id):
+        raise ValueError(
+            f"Invalid ticket id {ticket_id!r}: only letters, digits, '.', '_' and '-' "
+            "are allowed (e.g. APPSEC-69139). Paste the ticket key, not a URL."
+        )
     FEATURES_DIR.mkdir(parents=True, exist_ok=True)
     path = FEATURES_DIR / f"{ticket_id}.md"
     if not path.exists():

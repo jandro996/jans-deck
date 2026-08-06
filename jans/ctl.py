@@ -4,9 +4,19 @@ import sys
 from pathlib import Path
 
 from jans.core.commands import send_command
+from jans.core.features import is_valid_name
 
 
 COLORS = ["red", "orange", "yellow", "green", "blue", "purple", "pink", "teal"]
+
+
+def require_valid_name(value: str, label: str = "name") -> str:
+    """Exit with a clear error unless `value` is a safe directory/branch/file name."""
+    if not is_valid_name(value):
+        print(f"Error: invalid {label} {value!r}: only letters, digits, '.', '_' and '-' "
+              "are allowed (no spaces, slashes or pasted URLs)", file=sys.stderr)
+        sys.exit(1)
+    return value.strip()
 
 
 def usage():
@@ -45,18 +55,22 @@ def main():
         if not rest:
             print("Error: name required", file=sys.stderr)
             sys.exit(1)
-        result = send_command("new-research", name=rest[0])
+        result = send_command("new-research", name=require_valid_name(rest[0]))
     elif cmd == "new-task":
         if len(rest) < 2:
             print("Error: repo and name required", file=sys.stderr)
             sys.exit(1)
-        ticket = rest[2] if len(rest) > 2 else None
-        result = send_command("new-task", repo=rest[0], name=rest[1], ticket=ticket)
+        ticket = require_valid_name(rest[2], "ticket") if len(rest) > 2 else None
+        result = send_command("new-task",
+                              repo=require_valid_name(rest[0], "repo"),
+                              name=require_valid_name(rest[1]),
+                              ticket=ticket)
     elif cmd == "new-feature":
         if len(rest) < 2:
             print("Error: ticket and nickname required", file=sys.stderr)
             sys.exit(1)
-        result = send_command("new-feature", ticket=rest[0], nickname=rest[1],
+        result = send_command("new-feature", ticket=require_valid_name(rest[0], "ticket"),
+                              nickname=rest[1],
                               description=" ".join(rest[2:]) if len(rest) > 2 else "")
     elif cmd == "feature-status":
         if not rest:
@@ -67,7 +81,7 @@ def main():
         if not rest:
             print("Error: name required", file=sys.stderr)
             sys.exit(1)
-        result = send_command("new-tool", name=rest[0])
+        result = send_command("new-tool", name=require_valid_name(rest[0]))
     elif cmd == "new-review":
         if not rest:
             print("Error: GitHub PR URL required", file=sys.stderr)

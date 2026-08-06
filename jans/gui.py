@@ -1,7 +1,6 @@
 """jans GUI - native macOS window using tkinter."""
 import dataclasses
 import os
-import re
 import subprocess
 import threading
 import tkinter as tk
@@ -9,7 +8,13 @@ from pathlib import Path
 from tkinter import simpledialog, ttk
 
 from jans.core.commands import read_pending_command, write_result
-from jans.core.features import Feature, create_feature, link_session, load_features
+from jans.core.features import (
+    Feature,
+    create_feature,
+    is_valid_name as _is_valid_name,
+    link_session,
+    load_features,
+)
 from jans.core.log import log
 from jans.core.persistence import load_saved_sessions, migrate_claude_project_dir, save_sessions
 from jans.core.state_detector import detect_state, find_claude_session_for_cwd
@@ -77,6 +82,10 @@ def _session_kind(s: "Session") -> str:  # returns one of _SESSION_TABS
     if cwd.startswith(str(_TASKS_DIR).lower()):
         return "tasks"
     return "research"
+
+
+_INVALID_NAME_MSG = ("Only letters, digits, '.', '_' and '-' are allowed.\n"
+                     "No spaces, slashes or pasted URLs.")
 
 
 def _parse_github_pr_url(url: str) -> tuple[str, str, str] | None:
@@ -742,7 +751,12 @@ class JansApp:
             return
         description = simpledialog.askstring("New feature", "Description (optional):",
                                              parent=self._root)
-        create_feature(ticket.strip(), nickname.strip(), (description or "").strip())
+        from tkinter import messagebox
+        try:
+            create_feature(ticket.strip(), nickname.strip(), (description or "").strip())
+        except ValueError as e:
+            messagebox.showerror("Invalid ticket id", str(e), parent=self._root)
+            return
         self._features = load_features()
         self._features_expanded.add(ticket.strip())
         self._switch_tab("features")
@@ -1068,9 +1082,14 @@ class JansApp:
             self._render_sessions()
 
     def _new_research(self) -> None:
+        from tkinter import messagebox
         name = simpledialog.askstring("New research session", "Name:", parent=self._root)
-        if name and name.strip():
-            self._create_session("research", name.strip())
+        if not name or not name.strip():
+            return
+        if not _is_valid_name(name):
+            messagebox.showerror("Invalid name", _INVALID_NAME_MSG, parent=self._root)
+            return
+        self._create_session("research", name.strip())
 
     def _new_task(self) -> None:
         self._new_task_dialog()
@@ -1180,6 +1199,12 @@ class JansApp:
             selected = repo_var.get()
             name = name_entry.get().strip()
 
+            # Validate the task/branch name BEFORE creating anything, so an
+            # invalid name never leaves an orphaned feature manifest behind.
+            if not _is_valid_name(name):
+                name_entry.configure(bg=RED)
+                return
+
             # Resolve ticket
             ticket_sel = ticket_var.get()
             if ticket_sel == none_option:
@@ -1190,20 +1215,18 @@ class JansApp:
                 if not new_tid:
                     new_ticket_entry.configure(bg=RED)
                     return
-                create_feature(new_tid, new_nick, "")
+                try:
+                    create_feature(new_tid, new_nick, "")
+                except ValueError as e:
+                    from tkinter import messagebox
+                    new_ticket_entry.configure(bg=RED)
+                    messagebox.showerror("Invalid ticket id", str(e), parent=win)
+                    return
                 self._features = load_features()
                 ticket = new_tid
             else:
                 # Extract ticket_id (before the two spaces + nickname)
                 ticket = ticket_sel.split("  ")[0].strip()
-
-            if not name:
-                name_entry.configure(bg=RED)
-                return
-
-            if not re.match(r'^[A-Za-z0-9._-]+$', name):
-                name_entry.configure(bg=RED)
-                return
 
             if selected == clone_option:
                 url = clone_entry.get().strip()
@@ -1254,6 +1277,14 @@ class JansApp:
     def _create_task_session(self, repo: str, name: str,
                              ticket_id: str | None = None) -> None:
         import uuid
+        # Guard for both entry points (GUI dialog and jans-ctl new-task):
+        # an invalid name would create a broken worktree / git branch.
+        if not _is_valid_name(name) or not _is_valid_name(repo):
+            log.error("refusing to create task session: invalid repo=%r or name=%r "
+                      "(allowed: letters, digits, '.', '_', '-')", repo, name)
+            return
+        name = name.strip()
+        repo = repo.strip()
         cwd = str(_TASKS_DIR / f"{repo}-{name}")
         session_name = f"{repo}-{name}"
 
@@ -1289,9 +1320,14 @@ class JansApp:
         threading.Thread(target=_bg, daemon=True).start()
 
     def _new_tool(self) -> None:
+        from tkinter import messagebox
         name = simpledialog.askstring("New tool session", "Name:", parent=self._root)
-        if name and name.strip():
-            self._create_session("tool", name.strip(), cwd=str(_TOOLS_DIR / name.strip()))
+        if not name or not name.strip():
+            return
+        if not _is_valid_name(name):
+            messagebox.showerror("Invalid name", _INVALID_NAME_MSG, parent=self._root)
+            return
+        self._create_session("tool", name.strip(), cwd=str(_TOOLS_DIR / name.strip()))
 
     def _new_review(self) -> None:
         from tkinter import messagebox
@@ -1382,6 +1418,10 @@ class JansApp:
         elif action in ("new-research", "new-tool"):
             mode = action.replace("new-", "")
             name = cmd.get("name", "session")
+            if not _is_valid_name(name):
+                return {"error": f"invalid name {name!r}: only letters, digits, "
+                                 "'.', '_' and '-' are allowed"}
+            name = name.strip()
             cwd = str(_TOOLS_DIR / name) if mode == "tool" else None
             self._root.after(0, lambda m=mode, n=name, c=cwd: self._create_session(m, n, cwd=c))
             return {"ok": True}
@@ -1390,6 +1430,9 @@ class JansApp:
             name = cmd.get("name")
             if not repo or not name:
                 return {"error": "repo and name required"}
+            if not _is_valid_name(name) or not _is_valid_name(repo):
+                return {"error": f"invalid repo {repo!r} or name {name!r}: only letters, "
+                                 "digits, '.', '_' and '-' are allowed"}
             ticket = cmd.get("ticket")
             self._root.after(0, lambda r=repo, n=name, t=ticket:
                              self._create_task_session(r, n, t))
@@ -1400,7 +1443,10 @@ class JansApp:
             description = cmd.get("description", "")
             if not ticket:
                 return {"error": "ticket required"}
-            create_feature(ticket, nickname, description)
+            try:
+                create_feature(ticket, nickname, description)
+            except ValueError as e:
+                return {"error": str(e)}
             self._features = load_features()
             self._features_expanded.add(ticket)
             self._root.after(0, lambda: (self._switch_tab("features"), self._render_sessions()))
