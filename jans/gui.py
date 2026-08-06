@@ -97,6 +97,7 @@ def _bootstrap_planning_files(
     name: str,
     repo: str | None = None,
     pr: str | None = None,
+    feature: str | None = None,
 ) -> None:
     base = Path(cwd)
 
@@ -123,7 +124,7 @@ def _bootstrap_planning_files(
             "---\n"
             "type: task\n"
             "related_projects: []\n"
-            'feature: ""\n'
+            'feature: "' + (feature or "") + '"\n'
             "contribution_targets: []\n"
             "---\n"
         ))
@@ -160,12 +161,15 @@ def _task_plan_content(name: str) -> str:
     return (
         f"# Task plan: {name}\n\n"
         "## Phases\n\n"
-        "- [ ] Phase 0: Pre-code analysis (/pre-code)\n"
-        "- [ ] Phase 1: Implementation\n"
-        "- [ ] Phase 2: Pre-PR review (/pre-pr)\n"
-        "- [ ] Phase 3: Open PR (/pr-describe)\n"
-        "- [ ] Phase 4: Address review comments\n"
-        "- [ ] Phase 5: Merge and close (/finish-pr)\n"
+        "Workflow reference (informational only - these are NOT tracked TODOs; "
+        "real TODOs are appended below by /pre-code as `- [ ] TODO-N: ...`):\n\n"
+        "1. Phase 0: Pre-code analysis (/pre-code)\n"
+        "2. Phase 1: Implementation\n"
+        "3. Phase 2: Quality review (/quality) - optional\n"
+        "4. Phase 3: Pre-PR review (/pre-pr)\n"
+        "5. Phase 4: Open PR (/pr-describe)\n"
+        "6. Phase 5: Address review comments\n"
+        "7. Phase 6: Merge and close (/finish-pr)\n"
     )
 
 
@@ -1224,35 +1228,38 @@ class JansApp:
                              ticket_id: str | None = None) -> None:
         import uuid
         cwd = str(_TASKS_DIR / f"{repo}-{name}")
-
-        main_repo = _REPOS_DIR / repo
-        if not main_repo.exists():
-            main_repo = _TASKS_DIR / repo
-        if main_repo.exists():
-            subprocess.run(
-                ["git", "-C", str(main_repo), "worktree", "add", cwd, "-b", name],
-                capture_output=True,
-            )
-
-        # ensure dir exists even if worktree add failed or no repo found
-        Path(cwd).mkdir(parents=True, exist_ok=True)
-        _bootstrap_planning_files(cwd, "task", name)
+        session_name = f"{repo}-{name}"
 
         with self._lock:
             color = self._next_color()
-        session_name = f"{repo}-{name}"
         s = Session(name=session_name, cwd=cwd,
                     session_id=str(uuid.uuid4()), color=color, kind="tasks")
         with self._lock:
             self._sessions.append(s)
-
         if ticket_id:
             link_session(ticket_id, session_name)
             self._features = load_features()
-
-        _open_session(s, resume=False)
         self._switch_tab("tasks")
         self._persist_and_render()
+
+        def _bg():
+            main_repo = _REPOS_DIR / repo
+            if not main_repo.exists():
+                main_repo = _TASKS_DIR / repo
+            if main_repo.exists():
+                subprocess.run(
+                    ["git", "-C", str(main_repo), "fetch", "origin"],
+                    capture_output=True,
+                )
+                subprocess.run(
+                    ["git", "-C", str(main_repo), "worktree", "add", cwd, "-b", name, "origin/HEAD"],
+                    capture_output=True,
+                )
+            Path(cwd).mkdir(parents=True, exist_ok=True)
+            _bootstrap_planning_files(cwd, "task", name, feature=ticket_id)
+            _open_session(s, resume=False)
+
+        threading.Thread(target=_bg, daemon=True).start()
 
     def _new_tool(self) -> None:
         name = simpledialog.askstring("New tool session", "Name:", parent=self._root)
