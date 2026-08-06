@@ -117,21 +117,24 @@ def _bootstrap_planning_files(
             p.write_text(content)
 
     if mode == "research":
+        from datetime import datetime
+        started = datetime.now().strftime("%Y-%m-%d")
+        ticket = (feature or "").strip()
         _write("session.md", (
             "---\n"
             "type: research\n"
             "related_projects: []\n"
             f"investigation: {name}\n"
-            'feature: "standalone"\n'
+            f'feature: "{ticket or "standalone"}"\n'
             "contribution_targets: []\n"
             "---\n"
         ))
         _write("task_plan.md", _task_plan_content(name, mode))
         _write("findings.md", (
             f"# Findings — {name}\n\n"
-            "Started: \n"
+            f"Started: {started}\n"
             "Related projects: \n"
-            "Jira: —\n\n"
+            f"Jira: {ticket or '—'}\n\n"
             "---\n\n"
             "## Invariants discovered\n\n"
             "<!-- Constraints that must never be violated — go to {project}/domain/{subsystem}.md via /finish-research -->\n\n"
@@ -1082,14 +1085,107 @@ class JansApp:
             self._render_sessions()
 
     def _new_research(self) -> None:
-        from tkinter import messagebox
-        name = simpledialog.askstring("New research session", "Name:", parent=self._root)
-        if not name or not name.strip():
-            return
-        if not _is_valid_name(name):
-            messagebox.showerror("Invalid name", _INVALID_NAME_MSG, parent=self._root)
-            return
-        self._create_session("research", name.strip())
+        win = tk.Toplevel(self._root)
+        win.title("New research session")
+        win.configure(bg=BG)
+        win.geometry("420x200")
+        win.resizable(False, False)
+        win.transient(self._root)
+        win.grab_set()
+
+        btn_kw = dict(bg=BG_HOVER, fg=FG, relief="flat",
+                      font=("SF Pro Text", 11), padx=8, pady=4,
+                      cursor="hand2", activebackground=PURPLE, activeforeground=BG)
+        lbl_kw = dict(bg=BG, fg=FG, font=("SF Pro Text", 11), anchor="w")
+        entry_kw = dict(bg=BG_SURFACE, fg=FG, insertbackground=FG,
+                        relief="flat", font=("SF Pro Text", 11), bd=4)
+
+        pad = tk.Frame(win, bg=BG)
+        pad.pack(fill="both", expand=True, padx=16, pady=12)
+
+        tk.Label(pad, text="Name", **lbl_kw).pack(anchor="w")
+        name_entry = tk.Entry(pad, **entry_kw)
+        name_entry.pack(fill="x", pady=(2, 8))
+
+        # ── Feature (optional) ────────────────────────────────────
+        tk.Label(pad, text="Feature (optional)", **lbl_kw).pack(anchor="w")
+
+        features = self._features  # already loaded
+        new_feature_option = "＋ New feature…"
+        none_option = "— None —"
+        feature_choices = [none_option] + [
+            f"{f.ticket_id}  {f.nickname}" if f.nickname else f.ticket_id
+            for f in features
+        ] + [new_feature_option]
+        ticket_var = tk.StringVar(value=none_option)
+        ticket_cb = ttk.Combobox(pad, textvariable=ticket_var, values=feature_choices,
+                                 state="readonly", font=("SF Pro Text", 11))
+        ticket_cb.pack(fill="x", pady=(2, 0))
+
+        # New feature inline fields (hidden by default)
+        new_feat_frame = tk.Frame(pad, bg=BG)
+        tk.Label(new_feat_frame, text="Ticket ID", **lbl_kw).pack(anchor="w")
+        new_ticket_entry = tk.Entry(new_feat_frame, **entry_kw)
+        new_ticket_entry.pack(fill="x", pady=(2, 4))
+        tk.Label(new_feat_frame, text="Nickname", **lbl_kw).pack(anchor="w")
+        new_nick_entry = tk.Entry(new_feat_frame, **entry_kw)
+        new_nick_entry.pack(fill="x", pady=(2, 0))
+
+        def on_ticket_change(*_):
+            if ticket_var.get() == new_feature_option:
+                new_feat_frame.pack(fill="x", pady=(4, 8))
+                new_ticket_entry.focus_set()
+                win.geometry("420x300")
+            else:
+                new_feat_frame.pack_forget()
+                win.geometry("420x200")
+
+        ticket_cb.bind("<<ComboboxSelected>>", on_ticket_change)
+
+        # ── Buttons ───────────────────────────────────────────────
+        btn_row = tk.Frame(pad, bg=BG)
+        btn_row.pack(fill="x", pady=(12, 0))
+        tk.Button(btn_row, text="Cancel", command=win.destroy, **btn_kw).pack(side="right", padx=(4, 0))
+        create_btn = tk.Button(btn_row, text="Create", **btn_kw)
+        create_btn.configure(activebackground=GREEN)
+        create_btn.pack(side="right")
+
+        def do_create():
+            name = name_entry.get().strip()
+            # Validate the session name BEFORE creating anything, so an invalid
+            # name never leaves an orphaned feature manifest behind.
+            if not _is_valid_name(name):
+                name_entry.configure(bg=RED)
+                return
+
+            ticket_sel = ticket_var.get()
+            if ticket_sel == none_option:
+                ticket = None
+            elif ticket_sel == new_feature_option:
+                new_tid = new_ticket_entry.get().strip()
+                new_nick = new_nick_entry.get().strip()
+                if not new_tid:
+                    new_ticket_entry.configure(bg=RED)
+                    return
+                try:
+                    create_feature(new_tid, new_nick, "")
+                except ValueError as e:
+                    from tkinter import messagebox
+                    new_ticket_entry.configure(bg=RED)
+                    messagebox.showerror("Invalid ticket id", str(e), parent=win)
+                    return
+                self._features = load_features()
+                ticket = new_tid
+            else:
+                # Extract ticket_id (before the two spaces + nickname)
+                ticket = ticket_sel.split("  ")[0].strip()
+
+            win.destroy()
+            self._create_session("research", name, feature=ticket)
+
+        create_btn.configure(command=do_create)
+        win.bind("<Return>", lambda e: do_create())
+        name_entry.focus_set()
 
     def _new_task(self) -> None:
         self._new_task_dialog()
@@ -1395,18 +1491,31 @@ class JansApp:
     def _create_session(self, mode: str, name: str,
                         cwd: str | None = None,
                         repo: str | None = None,
-                        pr: str | None = None) -> None:
+                        pr: str | None = None,
+                        feature: str | None = None) -> None:
         import uuid
         if cwd is None:
             cwd = str(Path.home() / "research" / name)
+        # An optional ticket links the session to a feature manifest, exactly
+        # like the task path does. Creating the manifest is idempotent.
+        ticket = (feature or "").strip() or None
+        if ticket:
+            try:
+                create_feature(ticket, "", "")
+            except ValueError as e:
+                log.error("not linking session %r to a feature: %s", name, e)
+                ticket = None
         Path(cwd).mkdir(parents=True, exist_ok=True)
-        _bootstrap_planning_files(cwd, mode, name, repo=repo, pr=pr)
+        _bootstrap_planning_files(cwd, mode, name, repo=repo, pr=pr, feature=ticket)
         with self._lock:
             color = self._next_color()
         kind = {"research": "research", "task": "tasks", "tool": "tools", "review": "reviews"}.get(mode, "research")
         s = Session(name=name, cwd=cwd, session_id=str(uuid.uuid4()), color=color, kind=kind)
         with self._lock:
             self._sessions.append(s)
+        if ticket:
+            link_session(ticket, name)
+            self._features = load_features()
         _open_session(s, resume=False)
         self._switch_tab(kind)
         self._persist_and_render()
@@ -1423,7 +1532,13 @@ class JansApp:
                                  "'.', '_' and '-' are allowed"}
             name = name.strip()
             cwd = str(_TOOLS_DIR / name) if mode == "tool" else None
-            self._root.after(0, lambda m=mode, n=name, c=cwd: self._create_session(m, n, cwd=c))
+            ticket = cmd.get("ticket") if mode == "research" else None
+            if ticket and not _is_valid_name(ticket):
+                return {"error": f"invalid ticket {ticket!r}: only letters, digits, "
+                                 "'.', '_' and '-' are allowed"}
+            ticket = ticket.strip() if ticket else None
+            self._root.after(0, lambda m=mode, n=name, c=cwd, t=ticket:
+                             self._create_session(m, n, cwd=c, feature=t))
             return {"ok": True}
         elif action == "new-task":
             repo = cmd.get("repo")
