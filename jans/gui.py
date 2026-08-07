@@ -101,6 +101,78 @@ def _parse_github_pr_url(url: str) -> tuple[str, str, str] | None:
     return f"{owner}/{repo}", repo, pr
 
 
+def _resolve_pr_head_ref(full_repo: str, pr_number: str) -> str | None:
+    """Return the real head branch name of a PR, or None if it cannot be resolved."""
+    r = subprocess.run(
+        ["gh", "pr", "view", pr_number, "--repo", full_repo,
+         "--json", "headRefName", "-q", ".headRefName"],
+        capture_output=True, text=True,
+    )
+    if r.returncode != 0:
+        log.error("gh pr view %s#%s failed (exit %s): %s",
+                  full_repo, pr_number, r.returncode, r.stderr.strip())
+        return None
+    return r.stdout.strip() or None
+
+
+def _setup_review_worktree(full_repo: str, short_name: str,
+                           pr_number: str, cwd: str) -> tuple[bool, str]:
+    """Create the review worktree for a PR, checked out at the PR head.
+
+    Must run BEFORE any file is written into `cwd`: `git worktree add` refuses a
+    destination that already exists and is not empty (exit 128).  Returns
+    (ok, error_message); on failure nothing is left behind on disk.
+    """
+    local_repo = _REPOS_DIR / short_name
+    if not local_repo.exists():
+        local_repo = _TASKS_DIR / short_name
+    if not local_repo.exists():
+        # No local clone: degraded mode, a plain directory with session.md only.
+        # /review-pr Phase 1 does the clone/checkout in this case.
+        log.warning("no local clone for %r (looked in %s and %s): creating a plain "
+                    "review directory without worktree", short_name, _REPOS_DIR, _TASKS_DIR)
+        Path(cwd).mkdir(parents=True, exist_ok=True)
+        return True, ""
+
+    dest = Path(cwd)
+    if dest.exists() and any(dest.iterdir()):
+        return False, (f"{cwd} already exists and is not empty.\n"
+                       "Remove it (and run 'git worktree prune') before recreating "
+                       "the review session.")
+
+    head_ref = _resolve_pr_head_ref(full_repo, pr_number)
+    if head_ref is None:
+        return False, (f"could not resolve the head branch of {full_repo}#{pr_number} "
+                       "via 'gh pr view'. Check 'gh auth status' and the PR URL.")
+
+    # Fetch the PR head through the pull ref: works for fork PRs too, where
+    # <headRefName> does not exist on origin.
+    pr_ref = f"refs/remotes/pr/{pr_number}/head"
+    fetch = subprocess.run(
+        ["git", "-C", str(local_repo), "fetch", "-f", "origin",
+         f"pull/{pr_number}/head:{pr_ref}"],
+        capture_output=True, text=True,
+    )
+    if fetch.returncode != 0:
+        return False, (f"git fetch of pull/{pr_number}/head in {local_repo} failed "
+                       f"(exit {fetch.returncode}): {fetch.stderr.strip()}")
+
+    # Detached checkout at the PR head commit (the tip of <head_ref>), never at
+    # the local repo's default branch.
+    add = subprocess.run(
+        ["git", "-C", str(local_repo), "worktree", "add", "--detach", cwd, pr_ref],
+        capture_output=True, text=True,
+    )
+    if add.returncode != 0:
+        if dest.exists() and not any(dest.iterdir()):
+            dest.rmdir()
+        return False, (f"git worktree add {cwd} {head_ref} failed "
+                       f"(exit {add.returncode}): {add.stderr.strip()}")
+
+    log.info("review worktree ready: %s -> %s#%s (%s)", cwd, full_repo, pr_number, head_ref)
+    return True, ""
+
+
 def _bootstrap_planning_files(
     cwd: str,
     mode: str,
@@ -179,12 +251,15 @@ def _bootstrap_planning_files(
         _write("progress.md", f"# Progress: {name}\n")
 
     elif mode == "review":
+        # No `related_projects:` here on purpose: `repo:` already names the only project a
+        # review touches, nothing ever populated the field for reviews, and no skill reads it
+        # (`/review-pr` resolves the project from the git remote). An always-empty key is a
+        # promise the scaffold does not keep.
         _write("session.md", (
             "---\n"
             "type: pr-review-incoming\n"
             f"repo: {repo or ''}\n"
             f"pr: {pr or ''}\n"
-            "related_projects: []\n"
             "---\n"
         ))
 
@@ -1452,22 +1527,31 @@ class JansApp:
         self._create_review_session(full_repo, short_name, pr_number)
 
     def _create_review_session(self, full_repo: str, short_name: str, pr_number: str) -> None:
-        import uuid
         name = f"{short_name}-PR-{pr_number}"
         cwd  = str(_REVIEWS_DIR / name)
-        Path(cwd).mkdir(parents=True, exist_ok=True)
-        _bootstrap_planning_files(cwd, "review", name, repo=full_repo, pr=pr_number)
 
-        local_repo = _REPOS_DIR / short_name
-        if not local_repo.exists():
-            local_repo = _TASKS_DIR / short_name
-        if local_repo.exists():
-            subprocess.run(
-                ["git", "-C", str(local_repo), "worktree", "add", cwd,
-                 "--detach"],
-                capture_output=True,
-            )
+        # Order matters: the worktree must be created before anything is written
+        # into cwd, and the session is only registered if the checkout succeeded.
+        # Runs off the main thread because 'gh pr view' + 'git fetch' hit the network.
+        def _bg() -> None:
+            ok, err = _setup_review_worktree(full_repo, short_name, pr_number, cwd)
+            if not ok:
+                log.error("review session %s not created: %s", name, err)
+                self._root.after(0, lambda: self._review_setup_failed(name, err))
+                return
+            _bootstrap_planning_files(cwd, "review", name, repo=full_repo, pr=pr_number)
+            self._root.after(0, lambda: self._register_review_session(name, cwd))
 
+        threading.Thread(target=_bg, daemon=True).start()
+
+    def _review_setup_failed(self, name: str, err: str) -> None:
+        from tkinter import messagebox
+        messagebox.showerror("Review checkout failed",
+                             f"Could not create the review worktree for {name}:\n\n{err}",
+                             parent=self._root)
+
+    def _register_review_session(self, name: str, cwd: str) -> None:
+        import uuid
         with self._lock:
             color = self._next_color()
         s = Session(name=name, cwd=cwd, session_id=str(uuid.uuid4()), color=color, kind="reviews")

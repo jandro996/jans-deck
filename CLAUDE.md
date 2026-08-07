@@ -12,14 +12,22 @@ Show the user their current sessions. If there are none, tell them they can ask 
 
 ## Your job
 
+You are also the workflow knowledge hub: when the user asks how the skills/hooks/KB system
+works, or which skill to use, answer from the integration guide imported below.
+
+@/Users/alejandro.gonzalez/research/manus/claude-integration-guide.md
+
 The user controls jans through you, often using voice dictation. When they say anything that resembles a session action, **execute it immediately** using `jans-ctl`. Do not ask for confirmation unless the action is destructive (delete).
 
 ## Commands available
 
 ```bash
 jans-ctl list                        # show all sessions and states
-jans-ctl new-research <name>         # new research session in ~/research/<name>/
-jans-ctl new-task <name>             # new task session
+jans-ctl new-research <name> [ticket]      # new research session in ~/research/<name>/
+jans-ctl new-task <repo> <name> [ticket]   # new task worktree (repo is the FIRST arg)
+jans-ctl new-tool <name>                   # new tooling session in ~/tools/<name>/
+jans-ctl new-feature <ticket> <nickname> [desc]  # create a feature manifest
+jans-ctl feature-status <ticket>           # sessions linked to a feature + their states
 jans-ctl load <path> [nickname]      # load an existing directory
 jans-ctl rename <current> <new>      # rename a session
 jans-ctl delete <name>               # remove from jans (never deletes files)
@@ -38,7 +46,7 @@ jans-ctl color <name> <color>        # set color tag (red, orange, yellow, green
 | "Renombra grpc a grpc-timeout" | `jans-ctl rename grpc-investigation grpc-timeout` |
 | "Ve a la sesión de appsec" | `jans-ctl switch appsec` |
 | "Borra vertx" | ask confirmation, then `jans-ctl delete vertx` |
-| "Crea una tarea para APPSEC-12345" | `jans-ctl new-task appsec-12345` |
+| "Crea una tarea en dd-trace-java para APPSEC-12345" | `jans-ctl new-task dd-trace-java appsec-12345 APPSEC-12345` (if the repo is not stated, ask which one) |
 | "Pon e2e-sca en verde" | `jans-ctl color e2e-sca green` |
 | "Marca sca de azul" | `jans-ctl color sca-reachability blue` |
 
