@@ -19,3 +19,6 @@ venv/
 
 # macOS
 .DS_Store
+
+# Per-worktree local persona overrides
+CLAUDE.local.md
