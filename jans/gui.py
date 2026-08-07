@@ -108,6 +108,7 @@ def _bootstrap_planning_files(
     repo: str | None = None,
     pr: str | None = None,
     feature: str | None = None,
+    projects: list[str] | None = None,
 ) -> None:
     base = Path(cwd)
 
@@ -120,10 +121,14 @@ def _bootstrap_planning_files(
         from datetime import datetime
         started = datetime.now().strftime("%Y-%m-%d")
         ticket = (feature or "").strip()
+        if projects:
+            related_block = "related_projects:\n" + "".join(f"  - {p}\n" for p in projects)
+        else:
+            related_block = "related_projects: []\n"
         _write("session.md", (
             "---\n"
             "type: research\n"
-            "related_projects: []\n"
+            f"{related_block}"
             f"investigation: {name}\n"
             f'feature: "{ticket or "standalone"}"\n'
             "contribution_targets: []\n"
@@ -133,7 +138,7 @@ def _bootstrap_planning_files(
         _write("findings.md", (
             f"# Findings — {name}\n\n"
             f"Started: {started}\n"
-            "Related projects: \n"
+            f"Related projects: {', '.join(projects) if projects else ''}\n"
             f"Jira: {ticket or '—'}\n\n"
             "---\n\n"
             "## Invariants discovered\n\n"
@@ -1088,7 +1093,7 @@ class JansApp:
         win = tk.Toplevel(self._root)
         win.title("New research session")
         win.configure(bg=BG)
-        win.geometry("420x200")
+        win.geometry("420x260")
         win.resizable(False, False)
         win.transient(self._root)
         win.grab_set()
@@ -1135,12 +1140,17 @@ class JansApp:
             if ticket_var.get() == new_feature_option:
                 new_feat_frame.pack(fill="x", pady=(4, 8))
                 new_ticket_entry.focus_set()
-                win.geometry("420x300")
+                win.geometry("420x360")
             else:
                 new_feat_frame.pack_forget()
-                win.geometry("420x200")
+                win.geometry("420x260")
 
         ticket_cb.bind("<<ComboboxSelected>>", on_ticket_change)
+
+        # ── Related projects (optional) ──────────────────────────────
+        tk.Label(pad, text="Related projects (optional, space separated)", **lbl_kw).pack(anchor="w")
+        projects_entry = tk.Entry(pad, **entry_kw)
+        projects_entry.pack(fill="x", pady=(2, 8))
 
         # ── Buttons ───────────────────────────────────────────────
         btn_row = tk.Frame(pad, bg=BG)
@@ -1180,8 +1190,10 @@ class JansApp:
                 # Extract ticket_id (before the two spaces + nickname)
                 ticket = ticket_sel.split("  ")[0].strip()
 
+            projects = projects_entry.get().strip().split() or None
+
             win.destroy()
-            self._create_session("research", name, feature=ticket)
+            self._create_session("research", name, feature=ticket, projects=projects)
 
         create_btn.configure(command=do_create)
         win.bind("<Return>", lambda e: do_create())
@@ -1492,7 +1504,8 @@ class JansApp:
                         cwd: str | None = None,
                         repo: str | None = None,
                         pr: str | None = None,
-                        feature: str | None = None) -> None:
+                        feature: str | None = None,
+                        projects: list[str] | None = None) -> None:
         import uuid
         if cwd is None:
             cwd = str(Path.home() / "research" / name)
@@ -1506,7 +1519,7 @@ class JansApp:
                 log.error("not linking session %r to a feature: %s", name, e)
                 ticket = None
         Path(cwd).mkdir(parents=True, exist_ok=True)
-        _bootstrap_planning_files(cwd, mode, name, repo=repo, pr=pr, feature=ticket)
+        _bootstrap_planning_files(cwd, mode, name, repo=repo, pr=pr, feature=ticket, projects=projects)
         with self._lock:
             color = self._next_color()
         kind = {"research": "research", "task": "tasks", "tool": "tools", "review": "reviews"}.get(mode, "research")
