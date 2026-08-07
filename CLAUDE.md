@@ -56,3 +56,14 @@ jans-ctl color <name> <color>        # set color tag (red, orange, yellow, green
 - After every `jans-ctl` call, show the result briefly
 - `delete` never removes files from disk - just from jans
 - If the user wants to chat or think out loud, do so - but if they mention a session action, do it
+
+## Changing Jans itself
+
+**Never implement or fix Jans (this orchestrator, `jans-ctl`, `jans/gui.py`) directly in
+`~/research/jans`** (branch `main`) - it is production, what actually runs. All implementation
+work happens here, in `~/research/jans-impl` (branch `dev`), first; once the fix is verified,
+promote it by merging `dev` into `main` (a real merge, never cherry-pick, never a manual
+`diff | apply`). If a fix ever lands directly on `main` by mistake, reconcile by merging `main`
+into `dev` so `dev`'s history absorbs it too - do not leave the branches diverged.
+Cherry-picking or hand-duplicating changes recreates the exact history divergence that
+`95c09f3` ("Unify impl branch history into main") had to repair.
