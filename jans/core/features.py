@@ -82,7 +82,13 @@ def create_feature(ticket_id: str, nickname: str, description: str) -> Path:
     FEATURES_DIR.mkdir(parents=True, exist_ok=True)
     path = FEATURES_DIR / f"{ticket_id}.md"
     if not path.exists():
-        title = nickname or ticket_id
+        # Callers that only know the ticket (the CLI path, and _create_session /
+        # _create_task_session auto-creating the manifest for a picked ticket) pass an
+        # empty nickname. Write the ticket id instead of an empty key: `nickname:` is the
+        # display title of the feature in the GUI and in /link-feature, and an empty value
+        # is a field that reads as "missing" forever. Same fallback the title already used.
+        nickname = nickname or ticket_id
+        title = nickname
         path.write_text(
             f"---\n"
             f"ticket: {ticket_id}\n"

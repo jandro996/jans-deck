@@ -269,9 +269,12 @@ def _task_plan_content(name: str, mode: str) -> str:
         return (
             f"# Task plan: {name}\n\n"
             "## Phases\n\n"
+            # Keep byte-identical with the same scaffold in /start-research Phase 1 and
+            # /link-feature Phase 5, which recreate it when it is missing.
             "Workflow reference (informational only - these are NOT tracked TODOs):\n\n"
-            "1. Investigate and document findings (see findings.md)\n"
-            "2. Close and contribute to KB (/finish-research)\n"
+            "1. Load the KB context for this session (/start-research)\n"
+            "2. Investigate and document findings (see findings.md)\n"
+            "3. Close and contribute to KB (/finish-research)\n"
         )
     return (
         f"# Task plan: {name}\n\n"
@@ -1194,7 +1197,7 @@ class JansApp:
         new_feature_option = "＋ New feature…"
         none_option = "— None —"
         feature_choices = [none_option] + [
-            f"{f.ticket_id}  {f.nickname}" if f.nickname else f.ticket_id
+            f"{f.ticket_id}  {f.nickname}" if f.nickname and f.nickname != f.ticket_id else f.ticket_id
             for f in features
         ] + [new_feature_option]
         ticket_var = tk.StringVar(value=none_option)
@@ -1340,7 +1343,7 @@ class JansApp:
         new_feature_option = "＋ New feature…"
         none_option = "— None —"
         feature_choices = [none_option] + [
-            f"{f.ticket_id}  {f.nickname}" if f.nickname else f.ticket_id
+            f"{f.ticket_id}  {f.nickname}" if f.nickname and f.nickname != f.ticket_id else f.ticket_id
             for f in features
         ] + [new_feature_option]
         ticket_var = tk.StringVar(value=none_option)
@@ -1478,7 +1481,18 @@ class JansApp:
         with self._lock:
             self._sessions.append(s)
         if ticket_id:
-            link_session(ticket_id, session_name)
+            # Same as _create_session: create the manifest first (idempotent), because
+            # link_session() returns False in silence when the manifest does not exist yet.
+            # Without this, `jans-ctl new-task <repo> <name> <ticket>` for a ticket that has
+            # no manifest writes `feature: "<ticket>"` into session.md pointing at nothing.
+            try:
+                create_feature(ticket_id, "", "")
+            except ValueError as e:
+                log.error("not linking session %r to a feature: %s", session_name, e)
+                ticket_id = None
+        if ticket_id:
+            if not link_session(ticket_id, session_name):
+                log.error("could not link session %r to feature %r", session_name, ticket_id)
             self._features = load_features()
         self._switch_tab("tasks")
         self._persist_and_render()
