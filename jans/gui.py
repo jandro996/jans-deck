@@ -494,6 +494,7 @@ class JansApp:
         self._refresh()
         self._root.after(3000, self._tick)
         self._root.after(1000, self._focus_poll)
+        self._root.after(200, self._raise_window)
 
     # ── UI ────────────────────────────────────────────────────
 
@@ -1790,6 +1791,11 @@ class JansApp:
             self._root.lift()
         self._iterm_was_front = iterm_front
         self._root.after(1000, self._focus_poll)
+
+    def _raise_window(self) -> None:
+        self._root.deiconify()
+        self._root.lift()
+        self._root.focus_force()
 
     def _on_close(self) -> None:
         with self._lock:
